@@ -1,0 +1,75 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  user
+  assistant
+}
+
+model User {
+  id         String     @id @default(uuid()) @db.Uuid
+  email      String     @db.Text
+  password   String     @db.Text
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt      @map("updated_at") @db.Timestamptz(6)
+
+  documents  Document[]
+
+  @@map("users")
+}
+
+model Document {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String?   @map("user_id") @db.Uuid
+  name          String    @db.Text
+  manufacturer  String?   @db.Text
+  modelNumber   String?   @map("model_number") @db.Text
+  summary       String?   @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt      @map("updated_at") @db.Timestamptz(6)
+
+  // relations
+  user  User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chats Chat[]
+
+  @@index([userId])
+  @@map("documents")
+}
+
+model Chat {
+  id           String    @id @default(uuid()) @db.Uuid
+  furnitureId  String?   @map("furniture_id") @db.Uuid   // 図のカラム名を踏襲
+  title        String    @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt      @map("updated_at") @db.Timestamptz(6)
+
+  // relations
+  document Document? @relation(fields: [furnitureId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([furnitureId])
+  @@map("chats")
+}
+
+model Message {
+  id         String    @id @default(uuid()) @db.Uuid
+  chatId     String?   @map("chat_id") @db.Uuid
+  role       Role
+  content    String    @db.Text
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt      @map("updated_at") @db.Timestamptz(6)
+
+  // relations
+  chat Chat? @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@map("messages")
+}
