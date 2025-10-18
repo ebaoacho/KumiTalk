@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Phone, Video, MoreVertical, Smile, Paperclip, Send } from "lucide-react"
+import { Phone, Video, MoreVertical, Smile, Paperclip, Send, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -9,9 +9,12 @@ import type { Message } from "./chat-interface"
 
 interface ChatWindowProps {
   selectedChatId?: string
+  assemblyImages?: string[]
+  pdfUrl?: string
+  isProcessing?: boolean
 }
 
-export function ChatWindow({ selectedChatId }: ChatWindowProps) {
+export function ChatWindow({ selectedChatId, assemblyImages = [], isProcessing = false }: ChatWindowProps) {
   const [inputMessage, setInputMessage] = useState("")
   const [messages, setMessages] = useState<Message[]>([])
 
@@ -30,36 +33,33 @@ export function ChatWindow({ selectedChatId }: ChatWindowProps) {
   }
 
   const handleSend = async (chatId: string) => {
-  const content = inputMessage.trim()
-  if (!content) return
-  if (!chatId) {
-    alert("チャットが選択されていません。")
-    return
-  }
-  
-  setInputMessage("")
-  
-  try {
-    const response = await fetch(`/api/messages/${chatId}`, {  
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    })
-    
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || "Failed to send message")
+    const content = inputMessage.trim()
+    if (!content) return
+    if (!chatId) {
+      alert("チャットが選択されていません。")
+      return
     }
+    setInputMessage("")
     
-    const data = await response.json()
-    
-    // ユーザーメッセージとAIメッセージの両方を追加
-    setMessages(prev => [...prev, data.userMessage, data.aiMessage])
-  } catch (error) {
-    console.error("Failed to send message:", error)
-    alert("メッセージの送信に失敗しました。")
+    try {
+      const response = await fetch(`/api/messages/${chatId}`, {  
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to send message")
+      }
+      
+      const data = await response.json()
+      setMessages(prev => [...prev, data.userMessage, data.aiMessage])
+    } catch (error) {
+      console.error("Failed to send message:", error)
+      alert("メッセージの送信に失敗しました。")
+    }
   }
-}
 
   return (
     <div className="flex-1 flex flex-col bg-card/40 backdrop-blur-sm">
@@ -77,11 +77,63 @@ export function ChatWindow({ selectedChatId }: ChatWindowProps) {
               <MoreVertical className="h-4 w-4" />
             </Button>
           </div>
+          {isProcessing && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>画像を抽出中...</span>
+            </div>
+          )}
+          {!isProcessing && assemblyImages.length > 0 && (
+            <span className="text-sm text-green-600 font-medium">
+              組立手順: {assemblyImages.length}ページ抽出完了
+            </span>
+          )}
         </div>
       </div>
 
+      {/* Assembly Images Display */}
+      {assemblyImages.length > 0 && !isProcessing && (
+        <div className="border-b border-border/50 bg-white">
+          <div className="p-4">
+            <h3 className="text-lg font-bold mb-4 text-gray-800">組立手順</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {assemblyImages.map((image, index) => (
+                <div key={index} className="flex flex-col gap-2">
+                  <div className="relative group">
+                    <img 
+                      src={image} 
+                      alt={`ステップ ${index + 1}`}
+                      className="w-full h-auto rounded-lg border-2 border-gray-200 shadow-md hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => window.open(image, '_blank')}
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity rounded-lg flex items-center justify-center">
+                      <span className="text-white opacity-0 group-hover:opacity-100 text-sm font-medium">
+                        クリックで拡大
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between px-2">
+                    <span className="text-sm font-semibold text-gray-700">
+                      ステップ {index + 1}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      ページ {index + 1} / {assemblyImages.length}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {assemblyImages.length === 0 && !isProcessing && (
+          <div className="text-center text-gray-500 mt-8">
+            PDFファイルをアップロードして会話を始めましょう
+          </div>
+        )}
         {messages.map((message) => (
           <div
             key={message.id}
@@ -98,7 +150,6 @@ export function ChatWindow({ selectedChatId }: ChatWindowProps) {
               >
                 <p className="text-sm leading-relaxed">{message.content}</p>
               </div>
-              {/* timestamp がないケースがあるのでオプショナルに */}
               {"timestamp" in message && message.timestamp && (
                 <span className="text-xs text-muted-foreground mt-1 block px-2">{message.timestamp}</span>
               )}
@@ -118,10 +169,11 @@ export function ChatWindow({ selectedChatId }: ChatWindowProps) {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={(e) => {
-                // Enter/Shift+Enter どちらでも送信しない
                 if (e.key === "Enter") {
-                  // フォーム内でのデフォルト送信を防ぐ（保険）
                   e.preventDefault()
+                  if (selectedChatId && inputMessage.trim()) {
+                    handleSend(selectedChatId)
+                  }
                 }
               }}
               placeholder="メッセージを入力..."

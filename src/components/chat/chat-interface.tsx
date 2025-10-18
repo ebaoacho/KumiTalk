@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { ChatSidebar } from "./chat-sidebar"
 import { ChatWindow } from "./chat-window"
 import { Role } from "@prisma/client"
+import html2canvas from 'html2canvas'
 
 export interface User {
   id: string
@@ -38,13 +39,16 @@ export interface Message {
   content: string
   createdAt?: string
   updatedAt?: string
-  // 既存のダミーデータに合わせて timestamp を許容（UIは変更しない）
   timestamp?: string
 }
 
 export function ChatInterface({ userId }: { userId: string }) {
   const [chats, setChats] = useState<Chat[]>([])
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
+  const [assemblyImages, setAssemblyImages] = useState<string[]>([])
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState<string>('')
+  const [assemblyPages, setAssemblyPages] = useState<number[]>([])
 
   useEffect(() => {
     if (!userId) return
@@ -65,45 +69,123 @@ export function ChatInterface({ userId }: { userId: string }) {
     loadChats()
   }, [userId])
 
-const handleCreateChat = async (title: string, file: File) => {
-  if (!userId) {
-    alert("userId が未設定です。ログイン後にもう一度お試しください。")
-    return
-  }
-  console.log("userId", userId)
+  const capturePdfPages = async (pdfBlobUrl: string, pageNumbers: number[]) => {
+    console.log('PDFページをキャプチャ開始...')
+    
+    const images: string[] = []
+    
+    // 隠しiframeを作成
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'absolute'
+    iframe.style.left = '-10000px'
+    iframe.style.top = '-10000px'
+    iframe.style.width = '1200px'
+    iframe.style.height = '1600px'
+    document.body.appendChild(iframe)
 
-  // ファイルタイプのチェック
-  const allowedTypes = ["application/pdf", "text/plain"]
-  if (!allowedTypes.includes(file.type)) {
-    alert("PDFまたはテキストファイルのみアップロード可能です。")
-    return
-  }
+    try {
+      // PDFを読み込む
+      iframe.src = pdfBlobUrl
 
-  try {
-    // FormDataを使用してファイルを送信
-    const formData = new FormData()
-    formData.append("userId", userId)
-    formData.append("title", title)
-    formData.append("file", file)
+      // PDFの読み込みを待つ
+      await new Promise((resolve) => {
+        iframe.onload = () => {
+          setTimeout(resolve, 2000) // 2秒待機
+        }
+      })
 
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      body: formData, // Content-Typeは自動設定されるのでヘッダーは不要
-    })
+      console.log('PDF読み込み完了、キャプチャを開始します')
 
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || "アップロードに失敗しました。")
+      // 各ページをキャプチャ（簡易版：全体をキャプチャ）
+      const canvas = await html2canvas(iframe, {
+        allowTaint: true,
+        useCORS: true,
+        logging: true,
+      })
+
+      const imageDataUrl = canvas.toDataURL('image/png')
+      images.push(imageDataUrl)
+      
+      console.log(`キャプチャ完了: ${imageDataUrl.length} bytes`)
+
+    } catch (error) {
+      console.error('PDFキャプチャエラー:', error)
+    } finally {
+      // iframeを削除
+      document.body.removeChild(iframe)
     }
 
-    const created = await response.json()
-    setChats((prev) => [...prev, created])
-
-  } catch (error) {
-    console.error("Chat creation error:", error)
-    alert(error instanceof Error ? error.message : "アップロードに失敗しました。")
+    return images
   }
-}
+
+  const handleCreateChat = async (title: string, file: File) => {
+    if (!userId) {
+      alert("userId が未設定です。ログイン後にもう一度お試しください。")
+      return
+    }
+
+    console.log("=== ファイルアップロード開始 ===")
+
+    setIsProcessing(true)
+    setAssemblyImages([])
+
+    try {
+      const formData = new FormData()
+      formData.append("userId", userId)
+      formData.append("title", title)
+      formData.append("file", file)
+
+      console.log('PDFをアップロード中...')
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "アップロードに失敗しました。")
+      }
+
+      const created = await response.json()
+      console.log("=== サーバーからのレスポンス ===")
+      console.log("assemblyPages:", created.pdfData?.assemblyPages)
+
+      setChats((prev) => [...prev, created])
+
+    if (created.pdfData && created.pdfData.hasAssemblyInstructions) {
+      console.log(`組立手順を発見: ${created.pdfData.assemblyPages.length}ページ`)
+      console.log('サーバーサイドで画像変換を開始します...')
+      
+      // サーバーサイドAPIで画像変換
+      const convertResponse = await fetch('/api/pdf-to-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdfBase64: created.pdfData.base64,
+          pageNumbers: created.pdfData.assemblyPages
+        })
+      })
+
+      if (!convertResponse.ok) {
+        throw new Error('画像変換に失敗しました')
+      }
+
+      const { images } = await convertResponse.json()
+      console.log(`${images.length}枚の画像を取得しました`)
+      
+      setAssemblyImages(images)
+      setSelectedChatId(created.id)
+    }
+
+    } catch (error) {
+      console.error("=== エラー発生 ===")
+      console.error("Error:", error)
+      alert(error instanceof Error ? error.message : "アップロードに失敗しました。")
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   return (
     <div className="flex h-full bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       <ChatSidebar
@@ -112,7 +194,12 @@ const handleCreateChat = async (title: string, file: File) => {
         onSelectChatId={setSelectedChatId}
         onCreateChat={handleCreateChat}
       />
-      <ChatWindow selectedChatId={selectedChatId ?? undefined} />
+      <ChatWindow 
+        selectedChatId={selectedChatId ?? undefined} 
+        assemblyImages={assemblyImages}
+        pdfUrl={pdfUrl}
+        isProcessing={isProcessing}
+      />
     </div>
   )
 }
