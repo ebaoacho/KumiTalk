@@ -6,7 +6,9 @@ import {
   FileText,
   FolderPlus,
   Sparkles,
+  Trash2,
   Upload,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Chat } from "./chat-interface";
@@ -18,6 +20,8 @@ interface ChatSidebarProps {
   selectedChatId?: string;
   onSelectChatId: (chatId: string) => void;
   onCreateChat: (title: string, file: File) => void;
+  onDeleteChat: (chatId: string) => void;
+  deletingChatId?: string;
 }
 
 const formatDate = (value: string) => {
@@ -38,6 +42,8 @@ export function ChatSidebar({
   selectedChatId,
   onSelectChatId,
   onCreateChat,
+  onDeleteChat,
+  deletingChatId,
 }: ChatSidebarProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -103,56 +109,85 @@ export function ChatSidebar({
           <div className="grid gap-5 sm:grid-cols-2">
             {sortedChats.map((chat, index) => {
               const isActive = chat.id === selectedChatId;
+              const isDeleting = deletingChatId === chat.id;
               return (
-              <button
-                key={chat.id}
-                onClick={() => onSelectChatId(chat.id)}
-                className={cn(
-                  "group relative flex flex-col gap-4 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 text-left shadow-[0_25px_60px_rgba(59,130,246,0.2)] transition focus:outline-none focus:ring-2 focus:ring-cyan-300/60",
-                  isActive
-                    ? "border-cyan-200/60 bg-white/15 shadow-[0_30px_75px_rgba(34,211,238,0.32)]"
-                    : "hover:border-cyan-200/40 hover:bg-white/10 hover:shadow-[0_30px_70px_rgba(34,211,238,0.28)]"
-                )}
-              >
                 <div
+                  key={chat.id}
                   className={cn(
-                    "pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/0 via-sky-500/10 to-cyan-400/0 opacity-0 transition",
-                    isActive ? "opacity-100" : "group-hover:opacity-100"
+                    "group relative flex overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_25px_60px_rgba(59,130,246,0.2)] transition",
+                    isActive
+                      ? "border-cyan-200/60 bg-white/15 shadow-[0_30px_75px_rgba(34,211,238,0.32)]"
+                      : "hover:border-cyan-200/40 hover:bg-white/10 hover:shadow-[0_30px_70px_rgba(34,211,238,0.28)]"
                   )}
-                />
-                <div className="relative flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/25 to-sky-500/25 text-white shadow-inner">
-                      <FileText className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">
-                        Chat {index + 1}
-                      </span>
-                      <h3 className="text-lg font-semibold text-white">
-                        {chat.title}
-                      </h3>
-                    </div>
-                  </div>
-                </div>
-                <div className="relative flex items-center justify-between text-sm text-white/70">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4" />
-                    <span>{formatDate(chat.updatedAt)}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-white/60">
-                    {typeof chat.assemblyStepCount === "number" && (
-                      <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1">
-                        {chat.assemblyStepCount} steps
-                      </span>
+                >
+                  <div
+                    className={cn(
+                      "pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/0 via-sky-500/10 to-cyan-400/0 opacity-0 transition",
+                      isActive ? "opacity-100" : "group-hover:opacity-100"
                     )}
-                    <span className="truncate max-w-[8rem] sm:max-w-[10rem]">
-                      {chat.fileName}
-                    </span>
-                  </div>
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onSelectChatId(chat.id)}
+                    className="relative z-10 flex w-full flex-col gap-4 px-6 py-6 text-left focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/25 to-sky-500/25 text-white shadow-inner">
+                          <FileText className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-medium uppercase tracking-[0.3em] text-white/60">
+                            Chat {index + 1}
+                          </span>
+                          <h3 className="text-lg font-semibold text-white">
+                            {chat.title}
+                          </h3>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-sm text-white/70">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        <span>{formatDate(chat.updatedAt)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-white/60">
+                        {typeof chat.assemblyStepCount === "number" && (
+                          <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1">
+                            {chat.assemblyStepCount} steps
+                          </span>
+                        )}
+                        <span className="truncate max-w-[8rem] sm:max-w-[10rem]">
+                          {chat.fileName}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`${chat.title} を削除`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDeleteChat(chat.id);
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onPointerUp={(event) => event.stopPropagation()}
+                    disabled={isDeleting}
+                    className={cn(
+                      "absolute right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition focus:outline-none focus:ring-2 focus:ring-rose-300/70",
+                      "hover:bg-gradient-to-r hover:from-rose-500 hover:to-orange-400 hover:text-white",
+                      isDeleting && "cursor-progress bg-white/5"
+                    )}
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
-              </button>
-            )})}
+              );
+            })}
           </div>
         )}
       </div>

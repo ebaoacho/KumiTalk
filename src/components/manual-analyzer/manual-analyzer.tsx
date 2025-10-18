@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useProgress } from '@/lib/progress';
 import * as pdfjsLib from 'pdfjs-dist';
 import type { PDFPageProxy } from 'pdfjs-dist';
+import Image from 'next/image';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
@@ -155,10 +156,13 @@ export function ManualAnalyzer() {
             <div key={index} className="rounded-lg border bg-white p-4 shadow">
               <div className="grid gap-6 md:grid-cols-2">
                 <div>
-                  <img
+                  <Image
                     src={image}
                     alt={`ステップ ${index + 1}`}
-                    className="w-full rounded border"
+                    width={640}
+                    height={360}
+                    unoptimized
+                    className="w-full rounded border object-contain"
                   />
                 </div>
 
