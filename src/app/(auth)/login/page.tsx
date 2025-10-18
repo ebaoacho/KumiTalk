@@ -84,7 +84,7 @@ export default function LoginPage() {
     "placeholder:text-white/60 focus:border-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400/40";
 
   return (
-    <main className="relative flex min-h-[calc(100vh-7rem)] items-center justify-center px-4 py-16 sm:px-6 lg:px-10">
+    <main className="relative flex min-h-full items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <div className="absolute left-1/2 top-[-15%] h-72 w-72 -translate-x-1/2 rounded-full bg-indigo-500/40 blur-3xl" />
         <div className="absolute right-[20%] top-[20%] h-64 w-64 rounded-full bg-sky-500/30 blur-3xl" />

@@ -11,9 +11,11 @@ import {
 import { Button } from "@/components/ui/button";
 import type { Chat } from "./chat-interface";
 import { FileUploadDialog } from "../dialog/file-upload-dialog";
+import { cn } from "@/lib/utils";
 
 interface ChatSidebarProps {
   chats: Chat[];
+  selectedChatId?: string;
   onSelectChatId: (chatId: string) => void;
   onCreateChat: (title: string, file: File) => void;
 }
@@ -33,6 +35,7 @@ const formatDate = (value: string) => {
 
 export function ChatSidebar({
   chats,
+  selectedChatId,
   onSelectChatId,
   onCreateChat,
 }: ChatSidebarProps) {
@@ -98,13 +101,25 @@ export function ChatSidebar({
           </div>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2">
-            {sortedChats.map((chat, index) => (
+            {sortedChats.map((chat, index) => {
+              const isActive = chat.id === selectedChatId;
+              return (
               <button
                 key={chat.id}
                 onClick={() => onSelectChatId(chat.id)}
-                className="group relative flex flex-col gap-4 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 text-left shadow-[0_25px_60px_rgba(59,130,246,0.2)] transition hover:border-cyan-200/40 hover:bg-white/10 hover:shadow-[0_30px_70px_rgba(34,211,238,0.28)] focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+                className={cn(
+                  "group relative flex flex-col gap-4 overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 text-left shadow-[0_25px_60px_rgba(59,130,246,0.2)] transition focus:outline-none focus:ring-2 focus:ring-cyan-300/60",
+                  isActive
+                    ? "border-cyan-200/60 bg-white/15 shadow-[0_30px_75px_rgba(34,211,238,0.32)]"
+                    : "hover:border-cyan-200/40 hover:bg-white/10 hover:shadow-[0_30px_70px_rgba(34,211,238,0.28)]"
+                )}
               >
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/0 via-sky-500/10 to-cyan-400/0 opacity-0 transition group-hover:opacity-100" />
+                <div
+                  className={cn(
+                    "pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/0 via-sky-500/10 to-cyan-400/0 opacity-0 transition",
+                    isActive ? "opacity-100" : "group-hover:opacity-100"
+                  )}
+                />
                 <div className="relative flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/25 to-sky-500/25 text-white shadow-inner">
@@ -125,12 +140,19 @@ export function ChatSidebar({
                     <CalendarDays className="h-4 w-4" />
                     <span>{formatDate(chat.updatedAt)}</span>
                   </div>
-                  <span className="truncate text-xs text-white/60">
-                    {chat.fileName}
-                  </span>
+                  <div className="flex items-center gap-2 text-xs text-white/60">
+                    {typeof chat.assemblyStepCount === "number" && (
+                      <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1">
+                        {chat.assemblyStepCount} steps
+                      </span>
+                    )}
+                    <span className="truncate max-w-[8rem] sm:max-w-[10rem]">
+                      {chat.fileName}
+                    </span>
+                  </div>
                 </div>
               </button>
-            ))}
+            )})}
           </div>
         )}
       </div>

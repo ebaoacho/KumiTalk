@@ -31,6 +31,7 @@ export interface Chat {
   fileName: string;
   createdAt: string;
   updatedAt: string;
+  assemblyStepCount?: number;
 }
 
 export interface Message {
@@ -40,14 +41,40 @@ export interface Message {
   createdAt?: string;
   updatedAt?: string;
   timestamp?: string;
+  stepIndex?: number | null;
 }
+
+export interface AssemblyPart {
+  name: string;
+  description?: string;
+  color: string;
+}
+
+export interface AssemblyStep {
+  id?: string;
+  chatId?: string;
+  stepIndex: number;
+  title: string;
+  description: string;
+  imageBase64?: string;
+  parts: AssemblyPart[];
+}
+
+type ChatView = "library" | "chat";
 
 export function ChatInterface({ userId }: { userId: string }) {
   const { fetchWithProgress } = useProgress();
 
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
-  const [view, setView] = useState<"library" | "chat">("library");
+  const [view, setView] = useState<ChatView>("library");
+  const [assemblyStepStore, setAssemblyStepStore] = useState<
+    Record<string, AssemblyStep[]>
+  >({});
+  const [assemblyLoadingChatId, setAssemblyLoadingChatId] = useState<
+    string | null
+  >(null);
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -65,6 +92,8 @@ export function ChatInterface({ userId }: { userId: string }) {
           setChats(data);
           setSelectedChatId(null);
           setView("library");
+          setAssemblyStepStore({});
+          setAssemblyLoadingChatId(null);
         }
       } catch (error) {
         console.error("Failed to load chats:", error);
@@ -81,15 +110,20 @@ export function ChatInterface({ userId }: { userId: string }) {
   const handleCreateChat = useCallback(
     async (title: string, file: File) => {
       if (!userId) {
-        alert("userId が未設定です。ログイン後にもう一度お試しください。");
+        alert(
+          "userId が未設定です。ログイン後にもう一度お試しください。"
+        );
         return;
       }
 
-      const allowedTypes = ["application/pdf", "text/plain"];
+      const allowedTypes = ["application/pdf"];
       if (!allowedTypes.includes(file.type)) {
-        alert("PDF またはテキストファイルのみアップロード可能です。");
+        alert("PDF ファイルのみアップロード可能です。");
         return;
       }
+
+      setIsCreatingChat(true);
+      setAssemblyLoadingChatId(null);
 
       try {
         const formData = new FormData();
@@ -110,10 +144,20 @@ export function ChatInterface({ userId }: { userId: string }) {
           );
         }
 
-        const created: Chat = await response.json();
+        const created = (await response.json()) as Chat & {
+          assemblySteps?: AssemblyStep[];
+        };
+
         setChats((prev) => [...prev, created]);
         setSelectedChatId(created.id);
         setView("chat");
+
+        if (Array.isArray(created.assemblySteps)) {
+          setAssemblyStepStore((prev) => ({
+            ...prev,
+            [created.id]: created.assemblySteps ?? [],
+          }));
+        }
       } catch (error) {
         console.error("Chat creation error:", error);
         alert(
@@ -121,15 +165,51 @@ export function ChatInterface({ userId }: { userId: string }) {
             ? error.message
             : "チャットの作成に失敗しました。"
         );
+      } finally {
+        setIsCreatingChat(false);
       }
     },
     [fetchWithProgress, userId]
   );
 
-  const handleSelectChat = useCallback((chatId: string) => {
-    setSelectedChatId(chatId);
-    setView("chat");
-  }, []);
+  const loadAssemblySteps = useCallback(
+    async (chatId: string) => {
+      setAssemblyLoadingChatId(chatId);
+      try {
+        const response = await fetchWithProgress(`/api/assembly/${chatId}`);
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => ({}));
+          throw new Error(
+            (errorPayload as { error?: string }).error ??
+              "組立ステップの取得に失敗しました。"
+          );
+        }
+        const steps = (await response.json()) as AssemblyStep[];
+        setAssemblyStepStore((prev) => ({ ...prev, [chatId]: steps }));
+      } catch (error) {
+        console.error("Failed to fetch assembly steps:", error);
+        alert(
+          error instanceof Error
+            ? error.message
+            : "組立ステップの取得に失敗しました。"
+        );
+      } finally {
+        setAssemblyLoadingChatId(null);
+      }
+    },
+    [fetchWithProgress]
+  );
+
+  const handleSelectChat = useCallback(
+    (chatId: string) => {
+      setSelectedChatId(chatId);
+      setView("chat");
+      if (!assemblyStepStore[chatId]) {
+        void loadAssemblySteps(chatId);
+      }
+    },
+    [assemblyStepStore, loadAssemblySteps]
+  );
 
   const handleBackToLibrary = useCallback(() => {
     setView("library");
@@ -141,14 +221,23 @@ export function ChatInterface({ userId }: { userId: string }) {
     [chats, selectedChatId]
   );
 
+  const activeAssemblySteps =
+    (selectedChatId && assemblyStepStore[selectedChatId]) ?? [];
+
+  const isAssemblyLoading =
+    (assemblyLoadingChatId !== null &&
+      selectedChatId === assemblyLoadingChatId) ||
+    (isCreatingChat && selectedChatId === null);
+
   return (
-    <div className="relative mt-2 flex h-full min-h-[calc(100vh-14rem)] w-full flex-1 items-stretch justify-center overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/70 via-indigo-900/40 to-sky-900/30 px-4 py-5 shadow-[0_35px_80px_rgba(45,76,255,0.24)] sm:mt-64 sm:px-6 sm:py-2">
+    <div className="relative mt-4 flex h-full min-h-[calc(100vh-12rem)] w-full flex-1 items-stretch justify-center overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/70 via-indigo-900/40 to-sky-900/30 px-4 py-6 shadow-[0_35px_80px_rgba(45,76,255,0.24)] sm:mt-6 sm:px-6 sm:py-8">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.22),transparent_60%)]" />
 
       {view === "library" ? (
         <div className="flex w-full flex-1 min-h-0">
           <ChatSidebar
             chats={chats}
+            selectedChatId={selectedChatId ?? undefined}
             onSelectChatId={handleSelectChat}
             onCreateChat={handleCreateChat}
           />
@@ -159,6 +248,8 @@ export function ChatInterface({ userId }: { userId: string }) {
             selectedChatId={selectedChatId ?? undefined}
             chatMeta={activeChat ?? undefined}
             onBack={handleBackToLibrary}
+            assemblySteps={activeAssemblySteps}
+            isProcessingAssembly={isAssemblyLoading || isCreatingChat}
           />
         </div>
       )}

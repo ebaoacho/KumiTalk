@@ -53,6 +53,7 @@ model Chat {
   // relations
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
   messages Message[]
+  assemblySteps AssemblyStep[]
 
   @@map("chats")
 }
@@ -62,6 +63,7 @@ model Message {
   chatId     String    @map("chat_id") @db.Uuid
   role       Role
   content    String    @db.Text
+  stepIndex  Int?      @map("step_index")
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime  @updatedAt      @map("updated_at") @db.Timestamptz(6)
 
@@ -69,4 +71,21 @@ model Message {
   chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
   @@map("messages")
+}
+
+model AssemblyStep {
+  id          String   @id @default(uuid()) @db.Uuid
+  chatId      String   @map("chat_id") @db.Uuid
+  stepIndex   Int      @map("step_index")
+  title       String   @db.Text
+  description String   @db.Text
+  imageBase64 String?  @db.Text
+  parts       Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt      @map("updated_at") @db.Timestamptz(6)
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, stepIndex])
+  @@map("assembly_steps")
 }

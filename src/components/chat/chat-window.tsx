@@ -1,18 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Loader2, Send } from "lucide-react";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { Chat, Message } from "./chat-interface";
+import type { AssemblyStep, Chat, Message } from "./chat-interface";
 
 interface ChatWindowProps {
   selectedChatId?: string;
   chatMeta?: Chat;
   onBack?: () => void;
+  assemblySteps?: AssemblyStep[];
+  isProcessingAssembly?: boolean;
 }
+
+type StepFilter = "all" | number;
 
 const formatTimestamp = (value?: string) => {
   if (!value) return "";
@@ -31,6 +35,8 @@ export function ChatWindow({
   selectedChatId,
   chatMeta,
   onBack,
+  assemblySteps = [],
+  isProcessingAssembly = false,
 }: ChatWindowProps) {
   const { fetchWithProgress } = useProgress();
 
@@ -38,18 +44,26 @@ export function ChatWindow({
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [stepFilter, setStepFilter] = useState<StepFilter>("all");
+
   const endRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScroll = useRef(false);
+
+  useEffect(() => {
+    if (assemblySteps.length > 0) {
+      setStepFilter(assemblySteps[0].stepIndex);
+    } else {
+      setStepFilter("all");
+    }
+  }, [assemblySteps]);
 
   useEffect(() => {
     if (!selectedChatId) {
       setMessages([]);
       setIsLoading(false);
       shouldAutoScroll.current = false;
-      if (listRef.current) {
-        listRef.current.scrollTo({ top: 0 });
-      }
+      listRef.current?.scrollTo({ top: 0 });
       return;
     }
 
@@ -67,9 +81,7 @@ export function ChatWindow({
           shouldAutoScroll.current = false;
           setMessages(data);
           requestAnimationFrame(() => {
-            if (listRef.current) {
-              listRef.current.scrollTo({ top: 0 });
-            }
+            listRef.current?.scrollTo({ top: 0 });
           });
         }
       } catch (error) {
@@ -90,9 +102,7 @@ export function ChatWindow({
 
   useEffect(() => {
     shouldAutoScroll.current = false;
-    if (listRef.current) {
-      listRef.current.scrollTo({ top: 0 });
-    }
+    listRef.current?.scrollTo({ top: 0 });
   }, [selectedChatId]);
 
   useEffect(() => {
@@ -107,13 +117,22 @@ export function ChatWindow({
 
   const title = useMemo(
     () => chatMeta?.title ?? "選択中のチャット",
-    [chatMeta?.title],
+    [chatMeta?.title]
   );
-
   const fileName = useMemo(
     () => chatMeta?.fileName ?? "ファイル名未設定",
-    [chatMeta?.fileName],
+    [chatMeta?.fileName]
   );
+
+  const selectedStep =
+    typeof stepFilter === "number"
+      ? assemblySteps.find((step) => step.stepIndex === stepFilter) ?? null
+      : null;
+
+  const filteredMessages = useMemo(() => {
+    if (stepFilter === "all") return messages;
+    return messages.filter((message) => message.stepIndex === stepFilter);
+  }, [messages, stepFilter]);
 
   const handleSend = async (chatId?: string) => {
     const content = inputMessage.trim();
@@ -130,14 +149,17 @@ export function ChatWindow({
       const response = await fetchWithProgress(`/api/messages/${chatId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({
+          content,
+          stepIndex: typeof stepFilter === "number" ? stepFilter : null,
+        }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
           (errorData as { error?: string }).error ??
-            "メッセージの送信に失敗しました。",
+            "メッセージの送信に失敗しました。"
         );
       }
 
@@ -151,7 +173,7 @@ export function ChatWindow({
       alert(
         error instanceof Error
           ? error.message
-          : "メッセージの送信に失敗しました。",
+          : "メッセージの送信に失敗しました。"
       );
     } finally {
       setIsSending(false);
@@ -169,14 +191,14 @@ export function ChatWindow({
         <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(129,140,248,0.2),transparent_55%)]" />
         <div className="flex flex-col items-center gap-6 px-10 text-center">
           <div className="rounded-full border border-white/20 bg-white/10 px-5 py-2 text-xs uppercase tracking-[0.3em] text-white/60">
-            Ready to chat
+            Ready to assemble
           </div>
           <div className="space-y-2">
             <h3 className="text-2xl font-semibold text-white">
-              チャットを選択してください
+              組立マニュアルを選択してください
             </h3>
             <p className="text-sm text-white/70">
-              ファイル一覧からチャットを選ぶと、ここに会話が表示されます。
+              サイドバーでファイルを選ぶと、このエリアにステップ画像とチャットが表示されます。
             </p>
           </div>
         </div>
@@ -206,9 +228,141 @@ export function ChatWindow({
             <p className="text-xs text-white/80">{fileName}</p>
           </div>
         </div>
+        <div className="flex items-center gap-3">
+          {isProcessingAssembly && (
+            <span className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              画像を抽出しています…
+            </span>
+          )}
+          {!isProcessingAssembly && assemblySteps.length > 0 && (
+            <span className="rounded-full border border-emerald-300/40 bg-emerald-400/25 px-3 py-1 text-xs font-semibold text-emerald-50">
+              組立ステップ {assemblySteps.length} 件
+            </span>
+          )}
+        </div>
       </header>
 
       <div className="flex h-full min-h-0 flex-col">
+        {assemblySteps.length > 0 && (
+          <section className="border-b border-white/10 bg-white/10 px-6 py-6 backdrop-blur">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-white/50">
+                  Assembly Steps
+                </p>
+                <h4 className="text-lg font-semibold text-white">
+                  カラーガイド付き組立手順
+                </h4>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-white/70">
+                <button
+                  type="button"
+                  onClick={() => setStepFilter("all")}
+                  className={cn(
+                    "rounded-full border px-3 py-1 transition",
+                    stepFilter === "all"
+                      ? "border-sky-300/60 bg-sky-300/25 text-white"
+                      : "border-white/15 bg-white/5 hover:border-sky-200/40"
+                  )}
+                >
+                  全ステップ
+                </button>
+                {assemblySteps.map((step) => (
+                  <button
+                    key={step.stepIndex}
+                    type="button"
+                    onClick={() => setStepFilter(step.stepIndex)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 transition",
+                      stepFilter === step.stepIndex
+                        ? "border-sky-300/60 bg-sky-300/25 text-white"
+                        : "border-white/15 bg-white/5 hover:border-sky-200/40"
+                    )}
+                  >
+                    Step {step.stepIndex}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {assemblySteps.map((step) => (
+                <article
+                  key={step.stepIndex}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setStepFilter(step.stepIndex)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setStepFilter(step.stepIndex);
+                    }
+                  }}
+                  className={cn(
+                    "flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-white/5 shadow-[0_14px_35px_rgba(56,189,248,0.25)] transition hover:border-sky-200/40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-sky-200/70",
+                    stepFilter === step.stepIndex
+                      ? "border-sky-300/60"
+                      : undefined
+                  )}
+                >
+                  <div className="flex items-center justify-between px-5 pt-5 text-xs uppercase tracking-[0.3em] text-white/50">
+                    <span>Step {step.stepIndex}</span>
+                    <span>{step.title}</span>
+                  </div>
+                  <div className="px-5 pb-4 text-sm text-white/75">
+                    {step.description}
+                  </div>
+                  {step.imageBase64 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(step.imageBase64, "_blank", "noopener,noreferrer")
+                      }
+                      className="group relative h-48 w-full overflow-hidden"
+                    >
+                      <img
+                        src={step.imageBase64}
+                        alt={`組立ステップ ${step.stepIndex}`}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                      />
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
+                      <span className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-white/40 bg-black/45 px-3 py-1 text-xs text-white/80">
+                        クリックで拡大
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex h-48 w-full items-center justify-center bg-white/5 text-xs text-white/50">
+                      画像は生成されませんでした
+                    </div>
+                  )}
+                  {step.parts.length > 0 && (
+                    <div className="px-5 pb-5 pt-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+                        Parts & Colors
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {step.parts.map((part) => (
+                          <span
+                            key={`${step.stepIndex}-${part.name}`}
+                            className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80"
+                          >
+                            <span
+                              className="block h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: part.color }}
+                            />
+                            {part.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div
           ref={listRef}
           className="flex-1 overflow-y-auto px-6 py-6 min-h-0"
@@ -217,26 +371,30 @@ export function ChatWindow({
             <div className="flex h-full items-center justify-center text-sm text-white/70">
               メッセージを読み込んでいます…
             </div>
-          ) : messages.length === 0 ? (
+          ) : filteredMessages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-white/60">
-              <p className="text-sm">まだメッセージがありません。</p>
+              <p className="text-sm">
+                {stepFilter === "all"
+                  ? "まだメッセージがありません。"
+                  : `Step ${stepFilter} に関連するメッセージはまだありません。`}
+              </p>
               <p className="text-xs">
-                下の入力欄から最初のメッセージを送ってみましょう。
+                下の入力欄から質問すると、AIが組立手順についてサポートします。
               </p>
             </div>
           ) : (
-            messages.map((message) => (
+            filteredMessages.map((message) => (
               <div
                 key={message.id}
                 className={cn(
                   "mb-4 flex gap-3",
-                  message.role === "user" ? "justify-end" : "justify-start",
+                  message.role === "user" ? "justify-end" : "justify-start"
                 )}
               >
                 <div
                   className={cn(
                     "max-w-xl",
-                    message.role === "user" ? "items-end" : "items-start",
+                    message.role === "user" ? "items-end" : "items-start"
                   )}
                 >
                   <div
@@ -244,16 +402,24 @@ export function ChatWindow({
                       "rounded-3xl px-5 py-3 text-sm leading-relaxed shadow-lg transition",
                       message.role === "user"
                         ? "bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-400 text-white shadow-indigo-500/30"
-                        : "border border-white/10 bg-white/10 text-white shadow-cyan-500/10 backdrop-blur",
+                        : "border border-white/10 bg-white/10 text-white shadow-cyan-500/10 backdrop-blur"
                     )}
                   >
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   </div>
-                  {message.timestamp && (
-                    <span className="mt-2 block text-xs text-white/60">
-                      {formatTimestamp(message.timestamp)}
-                    </span>
-                  )}
+                  <div className="mt-2 flex items-center gap-3 text-[11px] uppercase tracking-[0.2em] text-white/45">
+                    {typeof message.stepIndex === "number" && (
+                      <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">
+                        Step {message.stepIndex}
+                      </span>
+                    )}
+                    {(() => {
+                      const timestampText = formatTimestamp(
+                        message.timestamp ?? message.createdAt
+                      );
+                      return timestampText ? <span>{timestampText}</span> : null;
+                    })()}
+                  </div>
                 </div>
               </div>
             ))
@@ -269,7 +435,11 @@ export function ChatWindow({
             <Input
               value={inputMessage}
               onChange={(event) => setInputMessage(event.target.value)}
-              placeholder="メッセージを入力…"
+              placeholder={
+                selectedStep
+                  ? `Step ${selectedStep.stepIndex} について質問する...`
+                  : "組立に関する質問を入力..."
+              }
               className="h-12 flex-1 border-none bg-transparent text-white placeholder:text-white/50 focus-visible:ring-0"
               autoComplete="off"
             />
