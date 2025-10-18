@@ -407,21 +407,40 @@ async function generateAssemblyImage(
       }
 
       // Some responses provide a file path instead of inline data.
-      const fileData = part.fileData as { fileUri?: string; fileId?: string } | undefined;
+      // const fileData = part.fileData as { fileUri?: string; fileId?: string } | undefined;
+      // const fileUri = fileData?.fileUri ?? fileData?.fileId;
+
+      const fileData = part.fileData as
+        | { fileUri?: string; fileId?: string; mimeType?: string }
+        | undefined;
       const fileUri = fileData?.fileUri ?? fileData?.fileId;
-      if (fileUri) {
+      // SDK からダウンロード API は提供されないので、HTTP(S) のときだけ fetch で取得
+      if (fileUri && /^https?:\/\//i.test(fileUri)) {
         try {
-          const fileResponse = await ai.files.download({ name: fileUri });
-          const arrayBuffer = await fileResponse.arrayBuffer();
-          const base64 = Buffer.from(
-            new Uint8Array(arrayBuffer)
-          ).toString("base64");
-          const mimeType = part.fileData?.mimeType ?? "image/png";
+          const res = await fetch(fileUri);
+          if (!res.ok) throw new Error(`fetch ${res.status}`);
+          const buf = await res.arrayBuffer();
+          const base64 = Buffer.from(new Uint8Array(buf)).toString("base64");
+          const mimeType = fileData?.mimeType ?? "image/png";
           return `data:${mimeType};base64,${base64}`;
-        } catch (downloadError) {
-          console.warn("Failed to download generated image:", downloadError);
+        } catch (e) {
+          console.warn("Failed to fetch generated image from URL:", e);
         }
       }
+      
+      // if (fileUri) {
+      //   try {
+      //     const fileResponse = await ai.files.download({ name: fileUri });
+      //     const arrayBuffer = await fileResponse.arrayBuffer();
+      //     const base64 = Buffer.from(
+      //       new Uint8Array(arrayBuffer)
+      //     ).toString("base64");
+      //     const mimeType = part.fileData?.mimeType ?? "image/png";
+      //     return `data:${mimeType};base64,${base64}`;
+      //   } catch (downloadError) {
+      //     console.warn("Failed to download generated image:", downloadError);
+      //   }
+      // }
     }
 
     console.warn("Image generation returned no inline or downloadable data.");

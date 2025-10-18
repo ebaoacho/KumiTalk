@@ -64,7 +64,9 @@ export function ManualAnalyzer() {
         viewport,
       };
 
-      await (page.render(renderContext as never) as never).promise;
+      // await (page.render(renderContext as never) as never).promise;
+      const renderTask = page.render(renderContext as any);
+      await (renderTask as any).promise;
 
       images.push(canvas.toDataURL('image/png'));
     }
