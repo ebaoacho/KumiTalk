@@ -2,7 +2,8 @@
 
 **家具の“取説”をチャットで解決する AI アシスタント**
 
-多人数でも家族でも、だれでも迷わず組み立てられる“会話型マニュアル体験”を提供します。PDFの取説をアップロードすると、工程や部品の疑問に根拠つきで答えます。
+だれでも迷わず組み立てられる“会話型マニュアル体験”を提供します。
+PDFの取説をアップロードすると、工程や部品の疑問に根拠つきで答えます。
 
 ![Kumi-Talk](public/images/kumi-talk.png)
 
@@ -10,16 +11,15 @@
 
 * **ハッカソン提出想定のMVP**（2日開発）
 * **会話×根拠引用**でDIY初心者にもやさしい操作性
-* `furnitures` テーブルは **`documents`** に統一（命名一貫）
 
 ## ✨ プロジェクトの特徴
 
 ### 💬 コア機能
 
 * **PDFアップロード**: 取説（PDF）とメタ情報を登録
-* **自動解析 & RAG**: ページ分割→埋め込み→近傍検索→**根拠引用つき回答**
+* **自動解析 & RAG**: ページ分割→埋め込み→近傍検索→**回答**
 * **チャットQA**: 途中からでも再開できる履歴ベースの対話
-* **横断検索**: 取説（=documents）を跨いだ検索・再開
+* **横断検索**: 取説を跨いだ検索・再開
 
 ### 🔧 技術的アピールポイント
 
@@ -29,7 +29,7 @@
 * **Supabase**（Auth / Postgres / Storage / RLS）
 * **pgvector** によるベクトル検索
 * **Tailwind CSS** による迅速なUI開発
-* **LLM**: Gemini（Adapterで差し替え可能）
+* **LLM**: Gemini
 
 #### アーキテクチャ設計
 
@@ -96,61 +96,12 @@ npm run dev
 
 アプリは [http://localhost:3000](http://localhost:3000) で起動します。
 
-## 🗃️ データベース設計
-
-```sql
--- 必須拡張
-create extension if not exists vector;
-
--- users
-(id uuid pk, email text unique, created_at timestamptz)
-
--- documents  ← 取説メタ + ステータス（furnitures→documentsに統一）
-(id uuid pk, owner_id uuid fk users.id, title text, brand text,
- model text, language text, pdf_path text,
- status text check (status in ('uploaded','processing','ready','error')),
- created_at timestamptz)
-
--- document_chunks  ← RAG用インデックス
-(id uuid pk, document_id uuid fk documents.id on delete cascade,
- page_number int, chunk_index int, content text, embedding vector(1536))
-
--- chats / messages
-(chats.id uuid pk, user_id uuid fk, document_id uuid fk nullable, title text, created_at)
-(messages.id uuid pk, chat_id uuid fk, role text, content text, citations jsonb, created_at)
-```
-
-### RLS（抜粋）
-
-* `documents`: 所有者のみ **select/insert/update/delete**
-* `document_chunks`: 紐づく `documents.owner_id = auth.uid()` のみ参照
-* `chats` / `messages`: `user_id`一致のみ参照/作成
-
-## 🔌 API ルート（App Router `/app/api/*`）
-
-* `POST /api/upload`
-
-  * 入: `file(pdf)`, `title`, `brand`, `model`, `language`
-  * 出: `{ documentId }`
-* `POST /api/analyze-manual`
-
-  * 入: `{ documentId }`
-  * 振る舞い: PDF抽出→分割→埋め込み→`document_chunks`投入→`documents.status=ready`
-* `POST /api/messages`
-
-  * 入: `{ chatId, content }`
-  * 振る舞い: 近傍検索→LLM→回答＋`citations`（ページ/抜粋）
-* `GET /api/documents?query=...`
-
-  * タイトル/メタ+ベクトルの横断検索
-
 ## 🎯 主要機能（画面）
 
 ### ルーム/一覧・詳細に相当する導線
 
-* **/documents**: 取説一覧・検索
-* **/chat/[id]**: チャット（引用から該当ページへジャンプ）
 * **/**: ホーム（最近のチャット / アップロードCTA）
+* **/chat/[id]**: チャット（引用から該当ページへジャンプ）
 
 ### 解析とチャットの体験
 
@@ -184,6 +135,12 @@ npm run format:check
 
 ```
 kumi-talk/
+├── ducuments/
+│   └── chair_nitori.pdf
+│   └── shelf_ikea.pdf
+├── prisma/
+│   └── migrations/
+│   └── schema.prisma
 ├── public/
 │   └── images/
 │       └── kumi-talk.png
@@ -194,25 +151,31 @@ kumi-talk/
 │       ├── messages/
 │       └── documents/
 ├── src/
+│   ├── api/
+│   │   ├── (auth)/
+│   │   ├── analyzer/
+│   │   ├── api/
+│   │   ├── chat/
+│   │   ├── favicon.ico
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
 │   ├── components/
+│   │   ├── chat/
+│   │   ├── dialog/
+│   │   ├── manual-analyzer/
 │   │   ├── ui/
-│   │   ├── ChatWindow.tsx
-│   │   ├── CitationCard.tsx
-│   │   └── UploadPanel.tsx
+│   │   ├── global-progress-overlay.tsx
+│   │   ├── top-nav.tsx
+│   │   ├── top-progress.tsx
 │   ├── lib/
-│   │   ├── llm/
-│   │   │   ├── index.ts    # Adapter経由API
-│   │   │   └── gemini.ts
-│   │   └── rag/
-│   │       ├── chunk.ts
-│   │       ├── extract.ts
-│   │       └── search.ts
-│   └── styles/
-├── supabase/               # 初期スキーマ/ポリシー（任意）
+│   │   ├── auth.ts
+│   │   ├── prisma.ts
+│   │   ├── progress.tsx
+│   │   ├── utils.ts
 ├── package.json
 └── README.md
 ```
-
 ---
 
 **開発期間**: 2日 (ハッカソン)
