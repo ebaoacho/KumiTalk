@@ -93,7 +93,7 @@ export default function SignupPage() {
     "placeholder:text-white/60 focus:border-fuchsia-300 focus:outline-none focus:ring-2 focus:ring-fuchsia-400/40";
 
   return (
-    <main className="relative flex min-h-[calc(100vh-7rem)] justify-center px-4 py-4 sm:px-6 lg:px-10">
+    <main className="relative flex min-h-[calc(100vh-7rem)] justify-center px-4 py-32 sm:px-6 lg:px-10">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <div className="absolute left-[18%] top-[-10%] h-72 w-72 rounded-full bg-purple-500/40 blur-3xl" />
         <div className="absolute right-[10%] top-[25%] h-64 w-64 rounded-full bg-rose-500/30 blur-3xl" />

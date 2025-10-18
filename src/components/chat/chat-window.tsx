@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Send } from "lucide-react";
+import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -317,13 +318,20 @@ export function ChatWindow({
                     <button
                       type="button"
                       onClick={() =>
-                        window.open(step.imageBase64, "_blank", "noopener,noreferrer")
+                        window.open(
+                          step.imageBase64,
+                          "_blank",
+                          "noopener,noreferrer"
+                        )
                       }
                       className="group relative h-48 w-full overflow-hidden"
                     >
-                      <img
+                      <Image
                         src={step.imageBase64}
                         alt={`組立ステップ ${step.stepIndex}`}
+                        width={640}
+                        height={360}
+                        unoptimized
                         className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
                       />
                       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />

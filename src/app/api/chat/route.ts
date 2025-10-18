@@ -90,9 +90,9 @@ function buildImagePrompt(step: AssemblyStepPayload): string {
       ? step.parts
           .map(
             (part, idx) =>
-              `Part ${idx + 1}: ${part.name} (render in ${part.color}${
-                part.description ? `, ${part.description}` : ""
-              })`
+              `Part ${idx + 1}: ${part.name} — use a solid fill of EXACTLY ${part.color}${
+                part.description ? ` (${part.description.trim()})` : ""
+              }`
           )
           .join("\n")
       : "No specific parts supplied. Focus on the overall action.";
@@ -101,9 +101,10 @@ function buildImagePrompt(step: AssemblyStepPayload): string {
 Create a high-resolution instruction-style illustration for Step ${
     step.stepIndex
   }: "${step.title}".
-- Clean white background, crisp line art, subtle shadows.
-- Highlight the focus components in the specified colours.
-- Any surrounding structures should be light grey outlines for context.
+- Background must be pure white (#FFFFFF) with crisp line art.
+- Highlight ONLY the listed parts using the specified HEX colours. The colours must match EXACTLY and be fully saturated.
+- Any surrounding structures should be light grey outlines (#D1D5DB) for context, without additional shading.
+- Avoid black fills or gradients unless explicitly specified.
 
 Step description:
 ${step.description}
@@ -187,21 +188,41 @@ function normaliseExtraction(raw: AssemblyExtraction | null): {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function extractStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  if (typeof (error as { status?: number }).status === "number") {
+    return (error as { status?: number }).status;
+  }
+  if (typeof (error as { status?: string }).status === "string") {
+    const parsed = Number((error as { status?: string }).status);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if ("error" in (error as object)) {
+    const nested = (error as { error?: { code?: number | string } }).error;
+    if (nested) {
+      if (typeof nested.code === "number") {
+        return nested.code;
+      }
+      if (typeof nested.code === "string") {
+        const parsed = Number(nested.code);
+        return Number.isFinite(parsed) ? parsed : undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
 function shouldRetry(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
 
   if (error instanceof GoogleGenerativeAIResponseError) {
-    return error.status === 429 || error.status === 503;
-  }
-
-  if ("status" in (error as object) && (error as { status?: number }).status) {
-    const status = (error as { status?: number }).status;
+    const status = extractStatusCode(error);
     if (status === 429 || status === 503) {
       return true;
     }
   }
 
-  const status = (error as { status?: number }).status;
+  const status = extractStatusCode(error);
   if (status === 429 || status === 503) return true;
 
   const message = (error as { message?: string }).message ?? "";
@@ -246,7 +267,7 @@ function normaliseError(
   if (error instanceof GoogleGenerativeAIResponseError) {
     return {
       message: error.message ?? fallback,
-      status: error.status,
+      status: extractStatusCode(error),
     };
   }
 
@@ -261,7 +282,7 @@ function normaliseError(
     if (nested?.message) {
       return {
         message: nested.message,
-        status: nested.code,
+        status: extractStatusCode(error),
       };
     }
   }
