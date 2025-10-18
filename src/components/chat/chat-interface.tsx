@@ -316,7 +316,7 @@ export function ChatInterface({ userId }: { userId: string }) {
             selectedChatId={selectedChatId ?? undefined}
             chatMeta={activeChat ?? undefined}
             onBack={handleBackToLibrary}
-            assemblySteps={activeAssemblySteps}
+            assemblySteps={activeAssemblySteps as AssemblyStep[]}
             isProcessingAssembly={isAssemblyLoading || isCreatingChat}
           />
         </div>
