@@ -378,8 +378,17 @@ async function generateAssemblyImage(
       { maxRetries: 5, baseDelayMs: 2000, maxDelayMs: 60_000 }
     );
 
-    if (Array.isArray(result.generatedImages) && result.generatedImages.length) {
-      const image = result.generatedImages.find(
+    const generatedImages = (
+      result as {
+        generatedImages?: Array<{
+          bytesBase64Encoded?: string;
+          mimeType?: string;
+        }>;
+      }
+    ).generatedImages;
+
+    if (Array.isArray(generatedImages) && generatedImages.length > 0) {
+      const image = generatedImages.find(
         (img) => img.bytesBase64Encoded
       );
       if (image?.bytesBase64Encoded) {
