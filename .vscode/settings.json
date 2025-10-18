@@ -1,0 +1,33 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "eslint.useFlatConfig": true,
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "files.eol": "\r\n",
+  "files.insertFinalNewline": true,
+
+  // import エイリアス @/ を IntelliSense に認識させる
+  "typescript.preferences.importModuleSpecifier": "shortest",
+  "javascript.preferences.importModuleSpecifier": "shortest",
+  "path-intellisense.mappings": {
+    "@": "${workspaceFolder}/src"
+  },
+
+  // Tailwind（v4 でも IntelliSense を有効化）
+  "css.validate": false,
+  "tailwindCSS.emmetCompletions": true,
+  "tailwindCSS.includeLanguages": {
+    "typescriptreact": "html",
+    "javascriptreact": "html",
+    "plaintext": "html"
+  },
+
+  // Prisma
+  "prisma.fileWatcher": "native",
+
+  // Next.js
+  "nextjs.telemetry.enabled": false
+}

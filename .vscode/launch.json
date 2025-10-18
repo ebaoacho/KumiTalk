@@ -1,0 +1,45 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Next.js: Dev (npm run dev)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "NODE_OPTIONS": "--enable-source-maps"
+      },
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "started server on .*:(\\d+)",
+        "uriFormat": "http://localhost:%s",
+        "action": "openExternally"
+      },
+      "skipFiles": ["<node_internals>/**"],
+      "preLaunchTask": "npm: prisma:generate"
+    },
+    {
+      "name": "Attach: Node (JS Debug)",
+      "type": "pwa-node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "timeout": 15000
+    },
+    {
+      "name": "Browser: Chrome to http://localhost:3000",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Dev + Browser",
+      "configurations": ["Next.js: Dev (npm run dev)", "Browser: Chrome to http://localhost:3000"]
+    }
+  ]
+}

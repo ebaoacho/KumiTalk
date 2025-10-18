@@ -1,0 +1,50 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "dev",
+      "label": "npm: dev",
+      "detail": "next dev --turbopack",
+      "problemMatcher": ["$eslint-stylish", "$tsc-watch"]
+    },
+    {
+      "type": "npm",
+      "script": "build",
+      "label": "npm: build",
+      "detail": "next build --turbopack",
+      "problemMatcher": ["$eslint-stylish", "$tsc"]
+    },
+    {
+      "type": "npm",
+      "script": "start",
+      "label": "npm: start",
+      "detail": "next start",
+      "problemMatcher": []
+    },
+    {
+      "type": "npm",
+      "script": "lint",
+      "label": "npm: lint",
+      "problemMatcher": ["$eslint-stylish"]
+    },
+    {
+      "label": "npm: prisma:generate",
+      "type": "shell",
+      "command": "npx prisma generate",
+      "problemMatcher": []
+    },
+    {
+      "label": "npm: prisma:migrate:dev",
+      "type": "shell",
+      "command": "npx prisma migrate dev",
+      "problemMatcher": []
+    },
+    {
+      "label": "type-check",
+      "type": "shell",
+      "command": "npx tsc --noEmit",
+      "problemMatcher": ["$tsc"]
+    }
+  ]
+}
