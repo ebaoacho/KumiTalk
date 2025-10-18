@@ -90,9 +90,7 @@ function buildImagePrompt(step: AssemblyStepPayload): string {
       ? step.parts
           .map(
             (part, idx) =>
-              `Part ${idx + 1}: ${part.name} — use a solid fill of EXACTLY ${part.color}${
-                part.description ? ` (${part.description.trim()})` : ""
-              }`
+              `Part ${idx + 1}: ${part.name}\n  - Fill colour: ${part.color}\n  - Finish: glossy`
           )
           .join("\n")
       : "No specific parts supplied. Focus on the overall action.";
@@ -102,9 +100,9 @@ Create a high-resolution instruction-style illustration for Step ${
     step.stepIndex
   }: "${step.title}".
 - Background must be pure white (#FFFFFF) with crisp line art.
-- Highlight ONLY the listed parts using the specified HEX colours. The colours must match EXACTLY and be fully saturated.
+- Highlight ONLY the listed parts using the specified HEX colours. Apply a glossy finish so the colours appear rich and reflective. Avoid black fills.
 - Any surrounding structures should be light grey outlines (#D1D5DB) for context, without additional shading.
-- Avoid black fills or gradients unless explicitly specified.
+- Ensure the coloured parts appear vibrant, metallic or glossy, matching the given HEX values.
 
 Step description:
 ${step.description}
@@ -409,7 +407,8 @@ async function generateAssemblyImage(
       }
 
       // Some responses provide a file path instead of inline data.
-      const fileUri = part.fileData?.fileUri ?? part.fileData?.fileId;
+      const fileData = part.fileData as { fileUri?: string; fileId?: string } | undefined;
+      const fileUri = fileData?.fileUri ?? fileData?.fileId;
       if (fileUri) {
         try {
           const fileResponse = await ai.files.download({ name: fileUri });
