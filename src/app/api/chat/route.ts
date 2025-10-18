@@ -233,12 +233,20 @@ function extractErrorDetails(error: unknown): unknown {
   if (!error || typeof error !== "object") return undefined;
 
   if (error instanceof GoogleGenerativeAIResponseError) {
-    return error.errorDetails;
+    const candidate = (error as unknown as { errorDetails?: unknown })
+      .errorDetails;
+    if (candidate !== undefined) {
+      return candidate;
+    }
   }
 
-  if ("error" in error && typeof (error as { error?: unknown }).error === "object") {
-    const nested = (error as { error?: { details?: unknown } }).error?.details;
-    if (nested) return nested;
+  if (
+    "error" in error &&
+    typeof (error as { error?: unknown }).error === "object" &&
+    (error as { error?: unknown }).error !== null
+  ) {
+    const nested = (error as { error: { details?: unknown } }).error.details;
+    if (nested !== undefined) return nested;
   }
 
   const message = (error as { message?: string }).message;
@@ -257,7 +265,11 @@ function extractErrorDetails(error: unknown): unknown {
     }
   }
 
-  return (error as { errorDetails?: unknown }).errorDetails;
+  if ("errorDetails" in (error as object)) {
+    return (error as { errorDetails?: unknown }).errorDetails;
+  }
+
+  return undefined;
 }
 
 function normaliseError(

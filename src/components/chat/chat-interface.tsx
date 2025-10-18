@@ -260,8 +260,9 @@ export function ChatInterface({ userId }: { userId: string }) {
 
       setChats((prev) => prev.filter((chat) => chat.id !== chatId));
       setAssemblyStepStore((prev) => {
-        const { [chatId]: _removed, ...rest } = prev;
-        return rest;
+        const next = { ...prev };
+        delete next[chatId];
+        return next;
       });
 
       if (selectedChatId === chatId) {
