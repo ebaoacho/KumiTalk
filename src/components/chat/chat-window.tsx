@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AssemblyStep, Chat, Message } from "./chat-interface";
+import { ShowImageDialog } from "../dialog/show-image-dialog";
 
 interface ChatWindowProps {
   selectedChatId?: string;
@@ -45,6 +46,7 @@ export function ChatWindow({
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [stepFilter, setStepFilter] = useState<StepFilter>("all");
+  const [showImageDialog, setShowImageDialog] = useState(false);
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -310,16 +312,14 @@ export function ChatWindow({
                     <span>Step {step.stepIndex}</span>
                     <span>{step.title}</span>
                   </div>
-                  <div className="px-5 pb-4 text-sm text-white/75">
-                    {step.description}
-                  </div>
+                  
                   {step.imageBase64 ? (
                     <button
                       type="button"
                       onClick={() =>
-                        window.open(step.imageBase64, "_blank", "noopener,noreferrer")
+                        setShowImageDialog(true)
                       }
-                      className="group relative h-48 w-full overflow-hidden"
+                      className="group relative h-48 w-full overflow-hidden my-4"
                     >
                       <img
                         src={step.imageBase64}
@@ -336,6 +336,9 @@ export function ChatWindow({
                       画像は生成されませんでした
                     </div>
                   )}
+                  <div className="px-5 pb-4 text-sm text-white/75">
+                    {step.description}
+                  </div>
                   {step.parts.length > 0 && (
                     <div className="px-5 pb-5 pt-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
@@ -454,6 +457,12 @@ export function ChatWindow({
           </form>
         </footer>
       </div>
+      <ShowImageDialog
+        open={showImageDialog}
+        onOpenChange={setShowImageDialog}
+        imageBase64={selectedStep?.imageBase64 ?? ""}
+        stepIndex={selectedStep?.stepIndex ?? 0}
+      />
     </div>
   );
 }

@@ -57,7 +57,7 @@ export function ChatSidebar({
 
   return (
     <>
-      <div className="relative flex w-full max-w-5xl flex-col gap-10 overflow-y-auto px-4 py-6 sm:px-8">
+      <div className="relative mx-auto flex w-full max-w-5xl flex-col gap-10 overflow-y-auto px-4 py-6 sm:px-8">
         <div className="relative mx-auto flex max-w-3xl flex-col items-center gap-3 text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.35em] text-sky-200/90">
             <Sparkles className="h-3.5 w-3.5" />
