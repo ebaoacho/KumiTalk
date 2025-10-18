@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ProgressProvider } from "@/lib/progress";
+import TopProgressBar from "@/components/top-progress";
+import GlobalProgressOverlay from "@/components/global-progress-overlay";
+import TopNav from "@/components/top-nav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,9 +29,24 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-950 text-slate-100`}
       >
-        {children}
+        <ProgressProvider>
+          <TopProgressBar />
+          <GlobalProgressOverlay />
+          <div className="relative flex min-h-screen flex-col overflow-hidden">
+            <div className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.25),transparent_55%)]" />
+            <div className="pointer-events-none absolute inset-0 -z-30">
+              <div className="absolute left-1/2 top-[-20%] h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-indigo-500/25 blur-3xl" />
+              <div className="absolute right-[-10%] top-1/3 h-80 w-80 rounded-full bg-fuchsia-500/20 blur-3xl" />
+              <div className="absolute bottom-[-25%] left-[-10%] h-[26rem] w-[26rem] rounded-full bg-sky-500/25 blur-3xl" />
+            </div>
+            <TopNav />
+            <main className="relative z-10 flex-1 px-4 pb-16 pt-24 sm:px-6 sm:pt-28 lg:px-10 lg:pt-32">
+              {children}
+            </main>
+          </div>
+        </ProgressProvider>
       </body>
     </html>
   );
