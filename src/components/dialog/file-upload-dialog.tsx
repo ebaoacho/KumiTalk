@@ -19,10 +19,6 @@ export function FileUploadDialog({ open, onOpenChange, onSubmit }: FileUploadDia
   const [title, setTitle] = useState("")
   const [file, setFile] = useState<File | null>(null)
   const [dragActive, setDragActive] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [isManualRegistered, setIsManualRegistered] = useState(false)
-  const [showModal, setShowModal] = useState(false)
-  const [manualText, setManualText] = useState("")
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault()
@@ -34,52 +30,46 @@ export function FileUploadDialog({ open, onOpenChange, onSubmit }: FileUploadDia
     }
   }
 
-  // マニュアル登録
-  const handleRegisterManual = async () => {
-    if (!manualText.trim()) {
-      alert('マニュアルテキストを入力してください')
-      return
-    }
-
-    setLoading(true)
-    // try {
-    //   // Try full RAG first, fall back to simple mode if it fails
-    //   const endpoint = '/api/manual'
-    //   const response = await fetch(endpoint, {
-    //     method: 'POST',
-    //     headers: { 'Content-Type': 'application/json' },
-    //     body: JSON.stringify({ productId, text: manualText })
-    //   })
-
-    //   if (response.ok) {
-    //     const data = await response.json()
-    //     setIsManualRegistered(true)
-    //     setShowModal(false)
-    //   } else {
-    //     const errorData = await response.json()
-    //     alert('登録に失敗しました: ' + errorData.error)
-    //   }
-    // } catch (error) {
-    //   alert('エラーが発生しました: ' + error)
-    // } finally {
-    //   setLoading(false)
-    // }
-  }
-
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0])
+      const droppedFile = e.dataTransfer.files[0]
+      
+      // Check if it's a .txt file
+      if (!droppedFile.name.toLowerCase().endsWith('.txt')) {
+        alert('.txtファイルのみアップロード可能です')
+        return
+      }
+      
+      setFile(droppedFile)
+      readFileContent(droppedFile)
     }
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0])
+      const selectedFile = e.target.files[0]
+      
+      // Check if it's a .txt file
+      if (!selectedFile.name.toLowerCase().endsWith('.txt')) {
+        alert('.txtファイルのみアップロード可能です')
+        return
+      }
+      
+      setFile(selectedFile)
+      readFileContent(selectedFile)
     }
+  }
+
+  const readFileContent = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+    }
+    reader.readAsText(file, 'UTF-8')
   }
 
   const handleSubmit = () => {
@@ -131,6 +121,7 @@ export function FileUploadDialog({ open, onOpenChange, onSubmit }: FileUploadDia
               <input
                 type="file"
                 id="file-upload"
+                accept=".txt"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 onChange={handleFileChange}
               />

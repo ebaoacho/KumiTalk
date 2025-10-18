@@ -38,7 +38,14 @@ export default function LoginPage() {
             : "ログインに失敗しました";
         throw new Error(message);
       }
-      router.push("/");
+
+      const data = await res.json();
+      // userIdをローカルストレージに格納
+      if (data.id) {
+        localStorage.setItem("userId", data.id);
+      }
+
+      router.push(`/chat?userId=${data.id}`);
     } catch (err) {
       setError(toMessage(err));
     } finally {
