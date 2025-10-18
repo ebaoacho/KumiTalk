@@ -65,47 +65,45 @@ export function ChatInterface({ userId }: { userId: string }) {
     loadChats()
   }, [userId])
 
-  const handleCreateChat = async (title: string, file: File) => {
-    if (!userId) {
-      alert("userId が未設定です。ログイン後にもう一度お試しください。")
-      return
-    }
-    console.log("userId", userId)
+const handleCreateChat = async (title: string, file: File) => {
+  if (!userId) {
+    alert("userId が未設定です。ログイン後にもう一度お試しください。")
+    return
+  }
+  console.log("userId", userId)
 
-    try {
-      // Read file content
-      const fileContent = await file.text()
-
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          title,
-          fileName: file.name,
-          content: fileContent,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("アップロードに失敗しました。")
-      }
-
-      const created = await response.json()
-      // 末尾に追加（または先頭に出したいなら [...prev] の前に）
-      setChats((prev) => [...prev, created])
-
-      // もし作成後に最新一覧で同期したければ再取得もOK
-      // const qs = new URLSearchParams({ userId }).toString()
-      // const fresh = await fetch(`/api/chat?${qs}`).then(r => r.json())
-      // setChats(fresh)
-
-    } catch (error) {
-      console.error("Chat creation error:", error)
-      alert("アップロードに失敗しました。")
-    }
+  // ファイルタイプのチェック
+  const allowedTypes = ["application/pdf", "text/plain"]
+  if (!allowedTypes.includes(file.type)) {
+    alert("PDFまたはテキストファイルのみアップロード可能です。")
+    return
   }
 
+  try {
+    // FormDataを使用してファイルを送信
+    const formData = new FormData()
+    formData.append("userId", userId)
+    formData.append("title", title)
+    formData.append("file", file)
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      body: formData, // Content-Typeは自動設定されるのでヘッダーは不要
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || "アップロードに失敗しました。")
+    }
+
+    const created = await response.json()
+    setChats((prev) => [...prev, created])
+
+  } catch (error) {
+    console.error("Chat creation error:", error)
+    alert(error instanceof Error ? error.message : "アップロードに失敗しました。")
+  }
+}
   return (
     <div className="flex h-full bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       <ChatSidebar

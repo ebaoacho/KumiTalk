@@ -30,21 +30,36 @@ export function ChatWindow({ selectedChatId }: ChatWindowProps) {
   }
 
   const handleSend = async (chatId: string) => {
-    const content = inputMessage.trim()
-    if (!content) return
-    if (!chatId) {
-      alert("チャットが選択されていません。")
-      return
-    }
-    setInputMessage("")
+  const content = inputMessage.trim()
+  if (!content) return
+  if (!chatId) {
+    alert("チャットが選択されていません。")
+    return
+  }
+  
+  setInputMessage("")
+  
+  try {
     const response = await fetch(`/api/messages/${chatId}`, {  
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content }),
     })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || "Failed to send message")
+    }
+    
     const data = await response.json()
-    setMessages(prev => [...prev, data])
+    
+    // ユーザーメッセージとAIメッセージの両方を追加
+    setMessages(prev => [...prev, data.userMessage, data.aiMessage])
+  } catch (error) {
+    console.error("Failed to send message:", error)
+    alert("メッセージの送信に失敗しました。")
   }
+}
 
   return (
     <div className="flex-1 flex flex-col bg-card/40 backdrop-blur-sm">

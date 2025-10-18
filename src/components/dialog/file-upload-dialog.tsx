@@ -38,14 +38,18 @@ export function FileUploadDialog({ open, onOpenChange, onSubmit }: FileUploadDia
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFile = e.dataTransfer.files[0]
       
-      // Check if it's a .txt file
-      if (!droppedFile.name.toLowerCase().endsWith('.txt')) {
-        alert('.txtファイルのみアップロード可能です')
+      // Check if it's a .txt or .pdf file
+      const fileName = droppedFile.name.toLowerCase()
+      if (!fileName.endsWith('.txt') && !fileName.endsWith('.pdf')) {
+        alert('PDFまたはテキストファイル(.txt)のみアップロード可能です')
         return
       }
       
       setFile(droppedFile)
-      readFileContent(droppedFile)
+      // PDFの場合はreadFileContentを呼ばない
+      if (fileName.endsWith('.txt')) {
+        readFileContent(droppedFile)
+      }
     }
   }
 
@@ -53,14 +57,18 @@ export function FileUploadDialog({ open, onOpenChange, onSubmit }: FileUploadDia
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0]
       
-      // Check if it's a .txt file
-      if (!selectedFile.name.toLowerCase().endsWith('.txt')) {
-        alert('.txtファイルのみアップロード可能です')
+      // Check if it's a .txt or .pdf file
+      const fileName = selectedFile.name.toLowerCase()
+      if (!fileName.endsWith('.txt') && !fileName.endsWith('.pdf')) {
+        alert('PDFまたはテキストファイル(.txt)のみアップロード可能です')
         return
       }
       
       setFile(selectedFile)
-      readFileContent(selectedFile)
+      // PDFの場合はreadFileContentを呼ばない
+      if (fileName.endsWith('.txt')) {
+        readFileContent(selectedFile)
+      }
     }
   }
 
@@ -108,7 +116,7 @@ export function FileUploadDialog({ open, onOpenChange, onSubmit }: FileUploadDia
 
           {/* File Upload Area */}
           <div className="space-y-2">
-            <Label>ファイル</Label>
+            <Label>ファイル (PDF / TXT)</Label>
             <div
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
@@ -121,7 +129,7 @@ export function FileUploadDialog({ open, onOpenChange, onSubmit }: FileUploadDia
               <input
                 type="file"
                 id="file-upload"
-                accept=".txt"
+                accept=".pdf,.txt"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 onChange={handleFileChange}
               />
@@ -153,7 +161,7 @@ export function FileUploadDialog({ open, onOpenChange, onSubmit }: FileUploadDia
                 <div className="text-center">
                   <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
                   <p className="text-sm text-foreground mb-1">ファイルをドラッグ＆ドロップ</p>
-                  <p className="text-xs text-muted-foreground">またはクリックして選択</p>
+                  <p className="text-xs text-muted-foreground">またはクリックして選択 (PDF / TXT)</p>
                 </div>
               )}
             </div>
