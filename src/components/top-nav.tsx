@@ -4,6 +4,8 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useProgress } from "@/lib/progress";
+import Image from 'next/image';
+
 
 export default function TopNav() {
   const router = useRouter();
@@ -38,6 +40,13 @@ export default function TopNav() {
     <header className="sticky top-0 z-40 border-b border-white/10 bg-black/30 backdrop-blur-xl">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-2">
+          <Image
+            src="/images/KumiTalk.png"
+            alt = "ロゴ"
+            width = {50}
+            height = {32}
+            className="object-contain"
+            />
           <span className="text-lg font-semibold tracking-tight text-white drop-shadow">
             Kumi Talk
           </span>
