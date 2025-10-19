@@ -103,7 +103,7 @@ export default function Footer() {
               
               <h3 className="text-sm font-semibold text-white">使い方（3ステップ）</h3>
               <ul className="list-disc space-y-1 pl-5">
-                <li>取説PDFをアップロード</li>
+                <li>組み立て説明書をアップロード</li>
                 <li>回答を見ながら組み立て</li>
                 <li>気になる工程・部品については，チャットにて質問！</li>
               </ul>
