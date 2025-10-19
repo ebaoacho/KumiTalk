@@ -5,7 +5,7 @@
 だれでも迷わず組み立てられる“会話型マニュアル体験”を提供します。
 PDFの取説をアップロードすると、工程や部品の疑問に根拠つきで答えます。
 
-![Kumi-Talk](public/images/kumi-talk.png)
+![Kumi-Talk](public/images/KumiTalk.png)
 
 ## 🏆 概要 / 位置づけ
 
