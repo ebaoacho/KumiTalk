@@ -7,6 +7,7 @@ export async function GET(
 ) {
   try {
     const { userId } = await params;
+
     if (!userId) {
       return NextResponse.json(
         { error: "ユーザーIDが必要です" },

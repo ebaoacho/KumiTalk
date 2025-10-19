@@ -90,9 +90,7 @@ function buildImagePrompt(step: AssemblyStepPayload): string {
       ? step.parts
           .map(
             (part, idx) =>
-              `Part ${idx + 1}: ${part.name} (render in ${part.color}${
-                part.description ? `, ${part.description}` : ""
-              })`
+              `Part ${idx + 1}: ${part.name}\n  - Fill colour: ${part.color}\n  - Finish: glossy`
           )
           .join("\n")
       : "No specific parts supplied. Focus on the overall action.";
@@ -101,9 +99,10 @@ function buildImagePrompt(step: AssemblyStepPayload): string {
 Create a high-resolution instruction-style illustration for Step ${
     step.stepIndex
   }: "${step.title}".
-- Clean white background, crisp line art, subtle shadows.
-- Highlight the focus components in the specified colours.
-- Any surrounding structures should be light grey outlines for context.
+- Background must be pure white (#FFFFFF) with crisp line art.
+- Highlight ONLY the listed parts using the specified HEX colours. Apply a glossy finish so the colours appear rich and reflective. Avoid black fills.
+- Any surrounding structures should be light grey outlines (#D1D5DB) for context, without additional shading.
+- Ensure the coloured parts appear vibrant, metallic or glossy, matching the given HEX values.
 
 Step description:
 ${step.description}
@@ -187,21 +186,41 @@ function normaliseExtraction(raw: AssemblyExtraction | null): {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function extractStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  if (typeof (error as { status?: number }).status === "number") {
+    return (error as { status?: number }).status;
+  }
+  if (typeof (error as { status?: string }).status === "string") {
+    const parsed = Number((error as { status?: string }).status);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if ("error" in (error as object)) {
+    const nested = (error as { error?: { code?: number | string } }).error;
+    if (nested) {
+      if (typeof nested.code === "number") {
+        return nested.code;
+      }
+      if (typeof nested.code === "string") {
+        const parsed = Number(nested.code);
+        return Number.isFinite(parsed) ? parsed : undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
 function shouldRetry(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
 
   if (error instanceof GoogleGenerativeAIResponseError) {
-    return error.status === 429 || error.status === 503;
-  }
-
-  if ("status" in (error as object) && (error as { status?: number }).status) {
-    const status = (error as { status?: number }).status;
+    const status = extractStatusCode(error);
     if (status === 429 || status === 503) {
       return true;
     }
   }
 
-  const status = (error as { status?: number }).status;
+  const status = extractStatusCode(error);
   if (status === 429 || status === 503) return true;
 
   const message = (error as { message?: string }).message ?? "";
@@ -212,12 +231,20 @@ function extractErrorDetails(error: unknown): unknown {
   if (!error || typeof error !== "object") return undefined;
 
   if (error instanceof GoogleGenerativeAIResponseError) {
-    return error.errorDetails;
+    const candidate = (error as unknown as { errorDetails?: unknown })
+      .errorDetails;
+    if (candidate !== undefined) {
+      return candidate;
+    }
   }
 
-  if ("error" in error && typeof (error as { error?: unknown }).error === "object") {
-    const nested = (error as { error?: { details?: unknown } }).error?.details;
-    if (nested) return nested;
+  if (
+    "error" in error &&
+    typeof (error as { error?: unknown }).error === "object" &&
+    (error as { error?: unknown }).error !== null
+  ) {
+    const nested = (error as { error: { details?: unknown } }).error.details;
+    if (nested !== undefined) return nested;
   }
 
   const message = (error as { message?: string }).message;
@@ -236,7 +263,11 @@ function extractErrorDetails(error: unknown): unknown {
     }
   }
 
-  return (error as { errorDetails?: unknown }).errorDetails;
+  if ("errorDetails" in (error as object)) {
+    return (error as { errorDetails?: unknown }).errorDetails;
+  }
+
+  return undefined;
 }
 
 function normaliseError(
@@ -246,7 +277,7 @@ function normaliseError(
   if (error instanceof GoogleGenerativeAIResponseError) {
     return {
       message: error.message ?? fallback,
-      status: error.status,
+      status: extractStatusCode(error),
     };
   }
 
@@ -261,7 +292,7 @@ function normaliseError(
     if (nested?.message) {
       return {
         message: nested.message,
-        status: nested.code,
+        status: extractStatusCode(error),
       };
     }
   }
@@ -345,8 +376,17 @@ async function generateAssemblyImage(
       { maxRetries: 5, baseDelayMs: 2000, maxDelayMs: 60_000 }
     );
 
-    if (Array.isArray(result.generatedImages) && result.generatedImages.length) {
-      const image = result.generatedImages.find(
+    const generatedImages = (
+      result as {
+        generatedImages?: Array<{
+          bytesBase64Encoded?: string;
+          mimeType?: string;
+        }>;
+      }
+    ).generatedImages;
+
+    if (Array.isArray(generatedImages) && generatedImages.length > 0) {
+      const image = generatedImages.find(
         (img) => img.bytesBase64Encoded
       );
       if (image?.bytesBase64Encoded) {
@@ -367,20 +407,40 @@ async function generateAssemblyImage(
       }
 
       // Some responses provide a file path instead of inline data.
-      const fileUri = part.fileData?.fileUri ?? part.fileData?.fileId;
-      if (fileUri) {
+      // const fileData = part.fileData as { fileUri?: string; fileId?: string } | undefined;
+      // const fileUri = fileData?.fileUri ?? fileData?.fileId;
+
+      const fileData = part.fileData as
+        | { fileUri?: string; fileId?: string; mimeType?: string }
+        | undefined;
+      const fileUri = fileData?.fileUri ?? fileData?.fileId;
+      // SDK からダウンロード API は提供されないので、HTTP(S) のときだけ fetch で取得
+      if (fileUri && /^https?:\/\//i.test(fileUri)) {
         try {
-          const fileResponse = await ai.files.download({ name: fileUri });
-          const arrayBuffer = await fileResponse.arrayBuffer();
-          const base64 = Buffer.from(
-            new Uint8Array(arrayBuffer)
-          ).toString("base64");
-          const mimeType = part.fileData?.mimeType ?? "image/png";
+          const res = await fetch(fileUri);
+          if (!res.ok) throw new Error(`fetch ${res.status}`);
+          const buf = await res.arrayBuffer();
+          const base64 = Buffer.from(new Uint8Array(buf)).toString("base64");
+          const mimeType = fileData?.mimeType ?? "image/png";
           return `data:${mimeType};base64,${base64}`;
-        } catch (downloadError) {
-          console.warn("Failed to download generated image:", downloadError);
+        } catch (e) {
+          console.warn("Failed to fetch generated image from URL:", e);
         }
       }
+      
+      // if (fileUri) {
+      //   try {
+      //     const fileResponse = await ai.files.download({ name: fileUri });
+      //     const arrayBuffer = await fileResponse.arrayBuffer();
+      //     const base64 = Buffer.from(
+      //       new Uint8Array(arrayBuffer)
+      //     ).toString("base64");
+      //     const mimeType = part.fileData?.mimeType ?? "image/png";
+      //     return `data:${mimeType};base64,${base64}`;
+      //   } catch (downloadError) {
+      //     console.warn("Failed to download generated image:", downloadError);
+      //   }
+      // }
     }
 
     console.warn("Image generation returned no inline or downloadable data.");
