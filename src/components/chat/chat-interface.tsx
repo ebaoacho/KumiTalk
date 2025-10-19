@@ -85,6 +85,7 @@ export function ChatInterface({ userId }: { userId: string }) {
   >(null);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+  const [errorOpen, setErrorOpen] = useState(false);
   const [pendingDeleteChatId, setPendingDeleteChatId] = useState<string | null>(
     null
   );
@@ -173,11 +174,7 @@ export function ChatInterface({ userId }: { userId: string }) {
         }
       } catch (error) {
         console.error("Chat creation error:", error);
-        alert(
-          error instanceof Error
-            ? error.message
-            : "チャットの作成に失敗しました。"
-        );
+        setErrorOpen(true);
       } finally {
         setIsCreatingChat(false);
       }
@@ -365,6 +362,25 @@ export function ChatInterface({ userId }: { userId: string }) {
               disabled={Boolean(deletingChatId)}
             >
               {deletingChatId ? "削除中…" : "削除する"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={errorOpen} onOpenChange={setErrorOpen}>
+        <DialogContent className="border-white/10 bg-slate-950/90 text-white backdrop-blur-xl">
+          <DialogHeader>
+            <DialogTitle>読み取りエラー</DialogTitle>
+            <DialogDescription className="text-white/70">
+              PDFの読み取りに失敗しました。再度お試しください。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              className="w-full border border-white/10 bg-white/5 text-white hover:bg-white/15 sm:w-auto"
+              onClick={() => setErrorOpen(false)}
+            >
+              閉じる
             </Button>
           </DialogFooter>
         </DialogContent>
