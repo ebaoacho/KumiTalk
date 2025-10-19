@@ -17,8 +17,8 @@ export function ShowImageDialog(props: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTitle>組立ステップ {stepIndex} の画像</DialogTitle>
       <DialogContent className="w-full max-w-2xl">
+        <DialogTitle className="text-lg font-semibold">組立ステップ {stepIndex} の画像</DialogTitle>
         <img
           src={imageBase64}
           alt={`組立ステップ ${stepIndex}`}

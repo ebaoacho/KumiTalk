@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AssemblyStep, Chat, Message } from "./chat-interface";
 import { ShowImageDialog } from "../dialog/show-image-dialog";
+import MarkdownRenderer from "./markdown-renderer";
 
 interface ChatWindowProps {
   selectedChatId?: string;
@@ -108,15 +109,15 @@ export function ChatWindow({
     listRef.current?.scrollTo({ top: 0 });
   }, [selectedChatId]);
 
-  useEffect(() => {
-    if (!shouldAutoScroll.current) {
-      return;
-    }
-    shouldAutoScroll.current = false;
-    requestAnimationFrame(() => {
-      endRef.current?.scrollIntoView({ behavior: "smooth" });
-    });
-  }, [messages]);
+  // useEffect(() => {
+  //   if (!shouldAutoScroll.current) {
+  //     return;
+  //   }
+  //   shouldAutoScroll.current = false;
+  //   requestAnimationFrame(() => {
+  //     endRef.current?.scrollIntoView({ behavior: "smooth" });
+  //   });
+  // }, [messages]);
 
   const title = useMemo(
     () => chatMeta?.title ?? "選択中のチャット",
@@ -132,10 +133,7 @@ export function ChatWindow({
       ? assemblySteps.find((step) => step.stepIndex === stepFilter) ?? null
       : null;
 
-  const filteredMessages = useMemo(() => {
-    if (stepFilter === "all") return messages;
-    return messages.filter((message) => message.stepIndex === stepFilter);
-  }, [messages, stepFilter]);
+  const filteredMessages = useMemo(() => messages, [messages]);
 
   const handleSend = async (chatId?: string) => {
     const content = inputMessage.trim();
@@ -145,11 +143,22 @@ export function ChatWindow({
       return;
     }
 
+    // 楽観的にユーザーメッセージを先に出す（任意）
+    const optimisticUser: Message = {
+      id: `temp-${Date.now()}`,
+      role: "user",
+      content,
+      stepIndex: typeof stepFilter === "number" ? stepFilter : null,
+      createdAt: new Date().toISOString(),
+    };
+
     setInputMessage("");
     setIsSending(true);
+    setMessages((prev) => [...prev, optimisticUser]);
+
 
     try {
-      const response = await fetchWithProgress(`/api/messages/${chatId}`, {
+      const response = await fetch(`/api/messages/${chatId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -169,8 +178,12 @@ export function ChatWindow({
       const data: { userMessage: Message; aiMessage: Message } =
         await response.json();
 
-      shouldAutoScroll.current = true;
-      setMessages((prev) => [...prev, data.userMessage, data.aiMessage]);
+      // 楽観的メッセージを置き換え（またはそのまま残して AI だけ追加でも可）
+      setMessages((prev) => {
+        // temp を本物に置き換え、AI を後ろに追加
+        const withoutTemp = prev.filter((m) => m.id !== optimisticUser.id);
+        return [...withoutTemp, data.userMessage, data.aiMessage];
+      });
     } catch (error) {
       console.error("Failed to send message:", error);
       alert(
@@ -178,6 +191,8 @@ export function ChatWindow({
           ? error.message
           : "メッセージの送信に失敗しました。"
       );
+      // 失敗時は楽観的メッセージを取り消す
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id));
     } finally {
       setIsSending(false);
     }
@@ -317,11 +332,8 @@ export function ChatWindow({
                   {step.imageBase64 ? (
                     <button
                       type="button"
-                      onClick={() =>
-                        setShowImageDialog(true)
-
-                      }
-                      className="group relative h-48 w-full overflow-hidden my-4"
+                      onClick={() => setShowImageDialog(true)}
+                      className="group relative my-4 h-48 w-full overflow-hidden"
                     >
                       <Image
                         src={step.imageBase64}
@@ -371,21 +383,14 @@ export function ChatWindow({
           </section>
         )}
 
-        <div
-          ref={listRef}
-          className="flex-1 overflow-y-auto px-6 py-6 min-h-0"
-        >
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
           {isLoading ? (
             <div className="flex h-full items-center justify-center text-sm text-white/70">
               メッセージを読み込んでいます…
             </div>
           ) : filteredMessages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-white/60">
-              <p className="text-sm">
-                {stepFilter === "all"
-                  ? "まだメッセージがありません。"
-                  : `Step ${stepFilter} に関連するメッセージはまだありません。`}
-              </p>
+              <p className="text-sm">まだメッセージがありません。</p>
               <p className="text-xs">
                 下の入力欄から質問すると、AIが組立手順についてサポートします。
               </p>
@@ -413,7 +418,15 @@ export function ChatWindow({
                         : "border border-white/10 bg-white/10 text-white shadow-cyan-500/10 backdrop-blur"
                     )}
                   >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    <MarkdownRenderer
+                      content={message.content}
+                      className={cn(
+                        // prose で見やすく（Tailwind Typography を入れてないなら下行は削ってOK）
+                        "prose prose-invert max-w-none",
+                        // 微調整：気泡内の余白・色のバランス
+                        "[&_.hljs-title]:font-semibold [&_.hljs-attr]:font-normal [&_code]:font-mono"
+                      )}
+                    />
                   </div>
                   <div className="mt-2 flex items-center gap-3 text-[11px] uppercase tracking-[0.2em] text-white/45">
                     {typeof message.stepIndex === "number" && (
@@ -432,6 +445,32 @@ export function ChatWindow({
               </div>
             ))
           )}
+
+          {/* 送信中だけ表示する“AI入力中”バブル（チャット領域限定のローディング） */}
+          {isSending && (
+            <div className="mb-4 flex justify-start gap-3">
+              <div className="max-w-xl items-start">
+                <div className="flex items-center gap-2 rounded-3xl border border-white/10 bg-white/10 px-5 py-3 text-sm leading-relaxed text-white shadow-cyan-500/10 backdrop-blur">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>AIが入力しています…</span>
+                </div>
+                <div className="mt-2 flex items-center gap-3 text-[11px] uppercase tracking-[0.2em] text-white/45">
+                  {typeof stepFilter === "number" && (
+                    <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">
+                      Step {stepFilter}
+                    </span>
+                  )}
+                  <span>
+                    {new Intl.DateTimeFormat("ja-JP", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }).format(new Date())}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div ref={endRef} />
         </div>
 

@@ -43,7 +43,7 @@ export default function RootLayout({
               <div className="absolute bottom-[-25%] left-[-10%] h-[26rem] w-[26rem] rounded-full bg-sky-500/25 blur-3xl" />
             </div>
             <TopNav />
-            <main className="relative z-10 flex-1 px-4 pb-16 pt-24 sm:px-6 sm:pt-28 lg:px-10 lg:pt-32">
+            <main className="relative z-10 flex-1">
               {children}
             </main>
             <Footer />

@@ -293,7 +293,7 @@ export function ChatInterface({ userId }: { userId: string }) {
     (isCreatingChat && selectedChatId === null);
 
   return (
-    <div className="relative mt-4 flex h-full min-h-[calc(100vh-12rem)] w-full flex-1 items-stretch justify-center overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/70 via-indigo-900/40 to-sky-900/30 px-4 py-6 shadow-[0_35px_80px_rgba(45,76,255,0.24)] sm:mt-4 sm:px-6 sm:py-32">
+    <div className="relative mt-4 flex h-full min-h-[calc(100vh-12rem)] w-full flex-1 items-stretch justify-center overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/70 via-indigo-900/40 to-sky-900/30 px-4 py-6 shadow-[0_35px_80px_rgba(45,76,255,0.24)]">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.22),transparent_60%)]" />
 
       {view === "library" ? (
