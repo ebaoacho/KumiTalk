@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send } from "lucide-react";
+import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
@@ -55,11 +55,7 @@ export function ChatWindow({
   const shouldAutoScroll = useRef(false);
 
   useEffect(() => {
-    if (assemblySteps.length > 0) {
-      setStepFilter(assemblySteps[0].stepIndex);
-    } else {
       setStepFilter("all");
-    }
   }, [assemblySteps]);
 
   useEffect(() => {
@@ -109,16 +105,6 @@ export function ChatWindow({
     listRef.current?.scrollTo({ top: 0 });
   }, [selectedChatId]);
 
-  // useEffect(() => {
-  //   if (!shouldAutoScroll.current) {
-  //     return;
-  //   }
-  //   shouldAutoScroll.current = false;
-  //   requestAnimationFrame(() => {
-  //     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  //   });
-  // }, [messages]);
-
   const title = useMemo(
     () => chatMeta?.title ?? "選択中のチャット",
     [chatMeta?.title]
@@ -132,6 +118,30 @@ export function ChatWindow({
     typeof stepFilter === "number"
       ? assemblySteps.find((step) => step.stepIndex === stepFilter) ?? null
       : null;
+
+  // ステップの並び（インデックス順に揃える）
+  const stepIndexes = useMemo(
+    () => [...assemblySteps.map(s => s.stepIndex)].sort((a, b) => a - b),
+    [assemblySteps]
+  );
+  const currentIdx = useMemo(
+    () => (typeof stepFilter === "number" ? stepIndexes.indexOf(stepFilter) : -1),
+    [stepFilter, stepIndexes]
+  );
+  const hasPrev = currentIdx > 0;
+  const hasNext = currentIdx >= 0 && currentIdx < stepIndexes.length - 1;
+  const goPrev = () => { if (hasPrev) setStepFilter(stepIndexes[currentIdx - 1]); };
+  const goNext = () => { if (hasNext) setStepFilter(stepIndexes[currentIdx + 1]); };
+
+  useEffect(() => {
+  if (typeof stepFilter !== "number") return;
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "ArrowLeft") { e.preventDefault(); goPrev(); }
+    if (e.key === "ArrowRight") { e.preventDefault(); goNext(); }
+  };
+  window.addEventListener("keydown", onKey);
+  return () => window.removeEventListener("keydown", onKey);
+}, [stepFilter, goPrev, goNext]);
 
   const filteredMessages = useMemo(() => messages, [messages]);
 
@@ -264,14 +274,13 @@ export function ChatWindow({
       <div className="flex h-full min-h-0 flex-col">
         {assemblySteps.length > 0 && (
           <section className="border-b border-white/10 bg-white/10 px-6 py-6 backdrop-blur">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            {/* ヘッダー + ステップピル */}
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-white/50">
                   Assembly Steps
                 </p>
-                <h4 className="text-lg font-semibold text-white">
-                  カラーガイド付き組立手順
-                </h4>
+                <h4 className="text-lg font-semibold text-white">カラーガイド付き組立手順</h4>
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-white/70">
                 <button
@@ -303,7 +312,9 @@ export function ChatWindow({
                 ))}
               </div>
             </div>
-
+          {/* 表示切替：全ステップ or 単体表示 */}
+          {stepFilter === "all" ? (
+            // これまで通り：全ステップのグリッド
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {assemblySteps.map((step) => (
                 <article
@@ -318,23 +329,15 @@ export function ChatWindow({
                     }
                   }}
                   className={cn(
-                    "flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-white/5 shadow-[0_14px_35px_rgba(56,189,248,0.25)] transition hover:border-sky-200/40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-sky-200/70",
-                    stepFilter === step.stepIndex
-                      ? "border-sky-300/60"
-                      : undefined
+                    "flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-white/5 shadow-[0_14px_35px_rgba(56,189,248,0.25)] transition hover:border-sky-200/40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-sky-200/70"
                   )}
                 >
                   <div className="flex items-center justify-between px-5 pt-5 text-xs uppercase tracking-[0.3em] text-white/50">
                     <span>Step {step.stepIndex}</span>
-                    <span>{step.title}</span>
+                    <span className="truncate">{step.title}</span>
                   </div>
-                  
                   {step.imageBase64 ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowImageDialog(true)}
-                      className="group relative my-4 h-48 w-full overflow-hidden"
-                    >
+                    <div className="group relative my-4 h-40 w-full overflow-hidden">
                       <Image
                         src={step.imageBase64}
                         alt={`組立ステップ ${step.stepIndex}`}
@@ -344,46 +347,135 @@ export function ChatWindow({
                         className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
                       />
                       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
-                      <span className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-white/40 bg-black/45 px-3 py-1 text-xs text-white/80">
-                        クリックで拡大
-                      </span>
-                    </button>
+                    </div>
                   ) : (
-                    <div className="flex h-48 w-full items-center justify-center bg-white/5 text-xs text-white/50">
-                      画像は生成されませんでした
+                    <div className="flex h-40 w-full items-center justify-center bg-white/5 text-xs text-white/50">
+                      画像なし
                     </div>
                   )}
-                  <div className="px-5 pb-4 text-sm text-white/75">
+                  <div className="px-5 pb-4 text-sm text-white/75 line-clamp-3">
                     {step.description}
                   </div>
-                  {step.parts.length > 0 && (
-                    <div className="px-5 pb-5 pt-3">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-                        Parts & Colors
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {step.parts.map((part) => (
-                          <span
-                            key={`${step.stepIndex}-${part.name}`}
-                            className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80"
-                          >
-                            <span
-                              className="block h-2.5 w-2.5 rounded-full"
-                              style={{ backgroundColor: part.color }}
-                            />
-                            {part.name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </article>
               ))}
             </div>
-          </section>
+          ) : (
+            // 単体表示（Featured のみ）＋左右矢印
+            selectedStep && (
+              <div className="relative">
+                {/* 左右の矢印 */}
+                <button
+                  type="button"
+                  onClick={goPrev}
+                  disabled={!hasPrev}
+                  className={cn(
+                    "absolute left-0 top-1/2 -translate-y-1/2 z-10",
+                    "rounded-full border border-white/20 bg-black/30 p-2 backdrop-blur",
+                    "hover:bg-black/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  )}
+                  aria-label="前のステップへ"
+                >
+                  <ChevronLeft className="h-6 w-6 text-white" />
+                </button>
+                <button
+                  type="button"
+                  onClick={goNext}
+                  disabled={!hasNext}
+                  className={cn(
+                    "absolute right-0 top-1/2 -translate-y-1/2 z-10",
+                    "rounded-full border border-white/20 bg-black/30 p-2 backdrop-blur",
+                    "hover:bg-black/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  )}
+                  aria-label="次のステップへ"
+                >
+                  <ChevronRight className="h-6 w-6 text-white" />
+                </button>
+          
+                {/* Featured 本体 */}
+                <article className="mb-6 overflow-hidden rounded-3xl border border-sky-300/60 bg-white/10 shadow-[0_25px_60px_rgba(56,189,248,0.25)]">
+                  <div className="flex flex-col gap-4 p-5 md:flex-row">
+                    <div className="md:w-[46%]">
+                     <div className="mb-3 flex items-center gap-2 text-xs">
+                       <span className="rounded-full border border-sky-300/60 bg-sky-300/25 px-2 py-0.5 text-white">
+                         Featured
+                       </span>
+                       <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-white/80">
+                         Step {selectedStep.stepIndex}
+                       </span>
+                     </div>
+                     {selectedStep.imageBase64 ? (
+                       <button
+                         type="button"
+                         onClick={() => setShowImageDialog(true)}
+                         className="group relative block h-64 w-full overflow-hidden rounded-2xl sm:h-80 md:h-96"
+                       >
+                         <Image
+                           src={selectedStep.imageBase64}
+                           alt={`組立ステップ ${selectedStep.stepIndex}`}
+                           width={960}
+                           height={540}
+                           unoptimized
+                           className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                         />
+                         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
+                         <span className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-white/40 bg-black/45 px-3 py-1 text-xs text-white/80">
+                           クリックで拡大
+                         </span>
+                       </button>
+                     ) : (
+                       <div className="flex h-64 w-full items-center justify-center rounded-2xl bg-white/5 text-xs text-white/50 sm:h-80 md:h-96">
+                         画像は生成されませんでした
+                       </div>
+                     )}
+                   </div>
+                   <div className="md:flex-1">
+                     <h5 className="mb-2 text-xl font-semibold text-white">{selectedStep.title}</h5>
+                     <p className="mb-3 text-sm text-white/80">{selectedStep.description}</p>
+                     {!!selectedStep.parts.length && (
+                       <div className="mt-4">
+                         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+                           Parts & Colors
+                         </p>
+                         <div className="flex flex-wrap gap-2">
+                           {selectedStep.parts.map((part) => (
+                             <span
+                               key={`${selectedStep.stepIndex}-${part.name}`}
+                               className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80"
+                             >
+                               <span className="block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: part.color }} />
+                               {part.name}
+                             </span>
+                           ))}
+                         </div>
+                       </div>
+                     )}
+                     <div className="mt-4 flex flex-wrap gap-2">
+                       <Button
+                         type="button"
+                         className="rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-900 hover:from-cyan-300 hover:to-emerald-300"
+                         onClick={() => setShowImageDialog(true)}
+                       >
+                         画像を拡大表示
+                       </Button>
+                       <Button
+                         variant="outline"
+                         type="button"
+                         className="rounded-full border-white/20 bg-white/10 text-white hover:bg-white/20"
+                         onClick={() => setStepFilter("all")}
+                       >
+                         全ステップを表示
+                       </Button>
+                     </div>
+                   </div>
+                 </div>
+               </article>
+             </div>
+           )
+          )}
+        </section>
         )}
 
-        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 py-6">
           {isLoading ? (
             <div className="flex h-full items-center justify-center text-sm text-white/70">
               メッセージを読み込んでいます…
@@ -469,8 +561,7 @@ export function ChatWindow({
                 </div>
               </div>
             </div>
-          )}
-          
+          )}      
           <div ref={endRef} />
         </div>
 
