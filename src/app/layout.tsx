@@ -5,6 +5,7 @@ import { ProgressProvider } from "@/lib/progress";
 import TopProgressBar from "@/components/top-progress";
 import GlobalProgressOverlay from "@/components/global-progress-overlay";
 import TopNav from "@/components/top-nav";
+import Footer from "@/components/footer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,6 +46,7 @@ export default function RootLayout({
             <main className="relative z-10 flex-1 px-4 pb-16 pt-24 sm:px-6 sm:pt-28 lg:px-10 lg:pt-32">
               {children}
             </main>
+            <Footer />
           </div>
         </ProgressProvider>
       </body>
