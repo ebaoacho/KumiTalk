@@ -38,18 +38,18 @@ export default function TopNav() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-black/30 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-2">
-          <Image
-            src="/images/KumiTalk.png"
-            alt = "ロゴ"
-            width = {50}
-            height = {32}
-            className="object-contain"
-            />
-          <span className="text-lg font-semibold tracking-tight text-white drop-shadow">
-            Kumi Talk
-          </span>
+        <Image
+          src="/images/KumiTalk.png"
+          alt="ロゴ"
+          width={50}
+          height={32}
+          className="object-contain"
+        />
+        <span className="text-lg font-semibold tracking-tight text-white drop-shadow">
+          組みTalk
+        </span>
         </div>
         <Button
           onClick={handleLogout}
