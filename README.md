@@ -116,46 +116,85 @@ npm run format:check
 ## 📁 ディレクトリ構成
 
 ```
-kumi-talk/
-├── ducuments/
-│   └── chair_nitori.pdf
+KumiTalk/
+├── documents/
+│   ├── chair_nitori.pdf
 │   └── shelf_ikea.pdf
+├── images/
+│   └── chair_nitori/
+│       ├── color/
+│       │   ├── parts_color.png
+│       │   ├── step1_color.png
+│       │   └── step2_color.png (...)
+│       ├── parts.png
+│       ├── raw.png
+│       └── step1.png (...)
 ├── prisma/
-│   └── migrations/
+│   ├── migrations/
+│   │   ├── 20251018043648_init/
+│   │   ├── 20251018080759_change_schema/
+│   │   └── 20251018191140_add_assembly_steps/
 │   └── schema.prisma
 ├── public/
-│   └── images/
-│       └── kumi-talk.png
-├── app/
-│   └── api/
-│       ├── upload/
-│       ├── analyze-manual/
-│       ├── messages/
-│       └── documents/
+│   ├── images/
+│   │   └── KumiTalk.png
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
 ├── src/
-│   ├── api/
+│   ├── app/
 │   │   ├── (auth)/
+│   │   │   ├── login/
+│   │   │   └── signup/
 │   │   ├── analyzer/
 │   │   ├── api/
+│   │   │   ├── analyze-manual/
+│   │   │   ├── assembly/
+│   │   │   ├── auth/
+│   │   │   ├── chat/
+│   │   │   ├── gemini/
+│   │   │   └── messages/
 │   │   ├── chat/
 │   │   ├── favicon.ico
 │   │   ├── globals.css
 │   │   ├── layout.tsx
-│   │   ├── page.tsx
+│   │   └── page.tsx
 │   ├── components/
 │   │   ├── chat/
+│   │   │   ├── chat-interface.tsx
+│   │   │   ├── chat-sidebar.tsx
+│   │   │   ├── chat-window.tsx
+│   │   │   └── markdown-renderer.tsx
 │   │   ├── dialog/
+│   │   │   ├── file-upload-dialog.tsx
+│   │   │   └── show-image-dialog.tsx
 │   │   ├── manual-analyzer/
+│   │   │   └── manual-analyzer.tsx
 │   │   ├── ui/
+│   │   │   ├── avatar.tsx
+│   │   │   ├── badge.tsx
+│   │   │   ├── button.tsx
+│   │   │   ├── dialog.tsx
+│   │   │   ├── input.tsx
+│   │   │   └── label.tsx
+│   │   ├── footer.tsx
 │   │   ├── global-progress-overlay.tsx
 │   │   ├── top-nav.tsx
-│   │   ├── top-progress.tsx
-│   ├── lib/
-│   │   ├── auth.ts
-│   │   ├── prisma.ts
-│   │   ├── progress.tsx
-│   │   ├── utils.ts
+│   │   └── top-progress.tsx
+│   └── lib/
+│       ├── auth.ts
+│       ├── prisma.ts
+│       ├── progress.tsx
+│       └── utils.ts
+├── components.json
+├── eslint.config.mjs
+├── next-env.d.ts
+├── next.config.ts
 ├── package.json
+├── postcss.config.mjs
+├── tsconfig.json
 └── README.md
 ```
 ---
