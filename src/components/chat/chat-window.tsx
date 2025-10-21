@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
