@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import type { AssemblyStep, Chat, Message } from "./chat-interface";
 import { ShowImageDialog } from "../dialog/show-image-dialog";
 import MarkdownRenderer from "./markdown-renderer";
+import { VoiceMicButton } from "@/components/voice/VoiceMicButton";
+import { useVoiceControl, type VoiceCommand } from "@/hooks/useVoiceControl";
 
 interface ChatWindowProps {
   selectedChatId?: string;
@@ -54,8 +56,34 @@ export function ChatWindow({
   const listRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScroll = useRef(false);
 
+  const voiceCommandHandlerRef = useRef<(command: VoiceCommand) => void>(() => {});
+  const voiceErrorHandlerRef = useRef<(error: string) => void>(() => {});
+
+  const {
+    isListening,
+    isSpeaking,
+    isSupported,
+    speak,
+    stopSpeaking,
+    startListening,
+    toggleListening,
+  } = useVoiceControl({
+    onCommand: (command) => voiceCommandHandlerRef.current(command),
+    onError: (error) => voiceErrorHandlerRef.current(error),
+    language: "ja-JP",
+  });
+
+  const voiceActivatedRef = useRef(false);
+  const prevSpokenFilterRef = useRef<StepFilter | null>(null);
+
   useEffect(() => {
-      setStepFilter("all");
+    voiceErrorHandlerRef.current = (error) => {
+      console.error("音声コントロールエラー:", error);
+    };
+  }, []);
+
+  useEffect(() => {
+    setStepFilter("all");
   }, [assemblySteps]);
 
   useEffect(() => {
@@ -121,121 +149,363 @@ export function ChatWindow({
 
   // ステップの並び（インデックス順に揃える）
   const stepIndexes = useMemo(
-    () => [...assemblySteps.map(s => s.stepIndex)].sort((a, b) => a - b),
+    () => [...assemblySteps.map((s) => s.stepIndex)].sort((a, b) => a - b),
     [assemblySteps]
   );
   const currentIdx = useMemo(
     () => (typeof stepFilter === "number" ? stepIndexes.indexOf(stepFilter) : -1),
     [stepFilter, stepIndexes]
   );
-  const hasPrev = currentIdx > 0;
-  const hasNext = currentIdx >= 0 && currentIdx < stepIndexes.length - 1;
-  const goPrev = () => { if (hasPrev) setStepFilter(stepIndexes[currentIdx - 1]); };
-  const goNext = () => { if (hasNext) setStepFilter(stepIndexes[currentIdx + 1]); };
+  const hasPrev = stepIndexes.length > 0 && (currentIdx > 0 || currentIdx === -1);
+  const hasNext = stepIndexes.length > 0 && (currentIdx === -1 || currentIdx < stepIndexes.length - 1);
+
+  const goPrev = useCallback(() => {
+    if (currentIdx > 0) {
+      setStepFilter(stepIndexes[currentIdx - 1]);
+    } else if (currentIdx === -1 && stepIndexes.length > 0) {
+      setStepFilter(stepIndexes[stepIndexes.length - 1]);
+    }
+  }, [currentIdx, stepIndexes]);
+
+  const goNext = useCallback(() => {
+    if (stepIndexes.length === 0) {
+      return;
+    }
+    if (currentIdx === -1) {
+      setStepFilter(stepIndexes[0]);
+      return;
+    }
+    if (currentIdx < stepIndexes.length - 1) {
+      setStepFilter(stepIndexes[currentIdx + 1]);
+    }
+  }, [currentIdx, stepIndexes]);
 
   useEffect(() => {
-  if (typeof stepFilter !== "number") return;
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === "ArrowLeft") { e.preventDefault(); goPrev(); }
-    if (e.key === "ArrowRight") { e.preventDefault(); goNext(); }
-  };
-  window.addEventListener("keydown", onKey);
-  return () => window.removeEventListener("keydown", onKey);
-}, [stepFilter, goPrev, goNext]);
+    if (typeof stepFilter !== "number") return;
 
-  const filteredMessages = useMemo(() => messages, [messages]);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goPrev();
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goNext();
+      }
+    };
 
-  const handleSend = async (chatId?: string) => {
-    const content = inputMessage.trim();
-    if (!content) return;
-    if (!chatId) {
-      alert("チャットが選択されていません。");
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [goNext, goPrev, stepFilter]);
+
+  const announceCurrentSelection = useCallback(() => {
+    if (assemblySteps.length === 0) {
+      speak("まだステップが読み込まれていません。");
       return;
     }
 
-    // 楽観的にユーザーメッセージを先に出す（任意）
-    const optimisticUser: Message = {
-      id: `temp-${Date.now()}`,
-      role: "user",
-      content,
-      stepIndex: typeof stepFilter === "number" ? stepFilter : null,
-      createdAt: new Date().toISOString(),
-    };
+    if (stepFilter === "all") {
+      const summary = chatMeta?.title
+        ? `${chatMeta.title}の全ステップ一覧です。${assemblySteps.length}件のステップがあります。`
+        : `全ステップ一覧です。${assemblySteps.length}件のステップがあります。`;
+      speak(summary);
+      return;
+    }
 
-    setInputMessage("");
-    setIsSending(true);
-    setMessages((prev) => [...prev, optimisticUser]);
+    if (typeof stepFilter === "number") {
+      const step = assemblySteps.find((s) => s.stepIndex === stepFilter);
+      if (step) {
+        speak(`ステップ${step.stepIndex}です。${step.description}`);
+      }
+    }
+  }, [assemblySteps, chatMeta?.title, speak, stepFilter]);
 
+  // ステップ変更時に自動的に音声出力（マイクボタン不要）
+  useEffect(() => {
+    if (prevSpokenFilterRef.current === stepFilter) return;
+    if (assemblySteps.length === 0) return;
 
-    try {
-      const response = await fetch(`/api/messages/${chatId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content,
-          stepIndex: typeof stepFilter === "number" ? stepFilter : null,
-        }),
-      });
+    prevSpokenFilterRef.current = stepFilter;
+    announceCurrentSelection();
+  }, [announceCurrentSelection, stepFilter, assemblySteps.length]);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          (errorData as { error?: string }).error ??
-            "メッセージの送信に失敗しました。"
-        );
+  const handleToggleListening = useCallback(() => {
+    if (!voiceActivatedRef.current) {
+      voiceActivatedRef.current = true;
+    }
+
+    // 音声出力中の場合は、まず音声を停止してから入力を開始
+    if (isSpeaking) {
+      stopSpeaking();
+      // 少し待ってから音声入力を開始
+      setTimeout(() => {
+        if (!isListening) {
+          startListening();
+        }
+      }, 100);
+      return;
+    }
+
+    toggleListening();
+  }, [isListening, isSpeaking, startListening, stopSpeaking, toggleListening]);
+
+  const filteredMessages = useMemo(() => messages, [messages]);
+
+  const handleSend = useCallback(
+    async (chatId?: string, overrideContent?: string): Promise<Message | null> => {
+      const source = overrideContent ?? inputMessage;
+      const content = source.trim();
+      if (!content) return null;
+      if (!chatId) {
+        alert("チャットが選択されていません。");
+        return null;
       }
 
-      const data: { userMessage: Message; aiMessage: Message } =
-        await response.json();
+      const optimisticUser: Message = {
+        id: `temp-${Date.now()}`,
+        role: "user",
+        content,
+        stepIndex: typeof stepFilter === "number" ? stepFilter : null,
+        createdAt: new Date().toISOString(),
+      };
 
-      // 楽観的メッセージを置き換え（またはそのまま残して AI だけ追加でも可）
-      setMessages((prev) => {
-        // temp を本物に置き換え、AI を後ろに追加
-        const withoutTemp = prev.filter((m) => m.id !== optimisticUser.id);
-        return [...withoutTemp, data.userMessage, data.aiMessage];
-      });
-    } catch (error) {
-      console.error("Failed to send message:", error);
-      alert(
-        error instanceof Error
-          ? error.message
-          : "メッセージの送信に失敗しました。"
-      );
-      // 失敗時は楽観的メッセージを取り消す
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id));
-    } finally {
-      setIsSending(false);
-    }
-  };
+      if (!overrideContent) {
+        setInputMessage("");
+      }
+      setIsSending(true);
+      setMessages((prev) => [...prev, optimisticUser]);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+      try {
+        const response = await fetch(`/api/messages/${chatId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content,
+            stepIndex: typeof stepFilter === "number" ? stepFilter : null,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            (errorData as { error?: string }).error ?? "メッセージの送信に失敗しました。"
+          );
+        }
+
+        const data: { userMessage: Message; aiMessage: Message } = await response.json();
+
+        setMessages((prev) => {
+          const withoutTemp = prev.filter((m) => m.id !== optimisticUser.id);
+          return [...withoutTemp, data.userMessage, data.aiMessage];
+        });
+
+        return data.aiMessage;
+      } catch (error) {
+        console.error("Failed to send message:", error);
+        alert(
+          error instanceof Error ? error.message : "メッセージの送信に失敗しました。"
+        );
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id));
+        return null;
+      } finally {
+        setIsSending(false);
+      }
+    },
+    [inputMessage, stepFilter]
+  );
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void handleSend(selectedChatId);
   };
 
+  useEffect(() => {
+    voiceCommandHandlerRef.current = (command: VoiceCommand) => {
+      if (command.type === "stopSpeaking") {
+        stopSpeaking();
+        return;
+      }
+
+      voiceActivatedRef.current = true;
+
+      if (!selectedChatId) {
+        speak("チャットが選択されていません。");
+        return;
+      }
+
+      if (command.type === "step" && command.stepNumber) {
+        const target = assemblySteps.find((step) => step.stepIndex === command.stepNumber);
+        if (target) {
+          setStepFilter(command.stepNumber);
+        } else {
+          speak(`ステップ${command.stepNumber}は存在しません。`);
+        }
+        return;
+      }
+
+      if (command.type === "next") {
+        if (stepIndexes.length === 0) {
+          speak("ステップが登録されていません。");
+          return;
+        }
+        if (currentIdx === -1) {
+          setStepFilter(stepIndexes[0]);
+          return;
+        }
+        if (currentIdx < stepIndexes.length - 1) {
+          setStepFilter(stepIndexes[currentIdx + 1]);
+        } else {
+          speak("これが最後のステップです。");
+        }
+        return;
+      }
+
+      if (command.type === "prev") {
+        if (stepIndexes.length === 0) {
+          speak("ステップが登録されていません。");
+          return;
+        }
+        if (currentIdx === -1) {
+          setStepFilter(stepIndexes[stepIndexes.length - 1]);
+          return;
+        }
+        if (currentIdx > 0) {
+          setStepFilter(stepIndexes[currentIdx - 1]);
+        } else {
+          speak("これが最初のステップです。");
+        }
+        return;
+      }
+
+      if (command.type === "first") {
+        if (stepIndexes.length === 0) {
+          speak("ステップが登録されていません。");
+          return;
+        }
+        setStepFilter(stepIndexes[0]);
+        return;
+      }
+
+      if (command.type === "last") {
+        if (stepIndexes.length === 0) {
+          speak("ステップが登録されていません。");
+          return;
+        }
+        setStepFilter(stepIndexes[stepIndexes.length - 1]);
+        return;
+      }
+
+      if (command.type === "all") {
+        setStepFilter("all");
+        return;
+      }
+
+      if (command.type === "zoomIn") {
+        if (selectedStep?.imageBase64) {
+          setShowImageDialog(true);
+          speak("画像を拡大表示しました。");
+        } else {
+          speak("拡大できるステップが選択されていません。");
+        }
+        return;
+      }
+
+      if (command.type === "zoomOut") {
+        if (showImageDialog) {
+          setShowImageDialog(false);
+          speak("拡大表示を閉じました。");
+        } else {
+          speak("現在拡大表示されていません。");
+        }
+        return;
+      }
+
+      if (command.type === "chat" && command.text) {
+        const voiceContent = command.text.trim();
+        if (!voiceContent) {
+          speak("メッセージが認識できませんでした。", {
+            onEnd: () => {
+              // 読み上げ終了後、自動的にマイクを再開（対話継続）
+              if (voiceActivatedRef.current && !isListening) {
+                startListening();
+              }
+            }
+          });
+          return;
+        }
+        void (async () => {
+          const aiMessage = await handleSend(selectedChatId, voiceContent);
+          if (aiMessage) {
+            speak(aiMessage.content, {
+              onEnd: () => {
+                // AI応答の読み上げ終了後、自動的にマイクを再開（対話継続）
+                if (voiceActivatedRef.current && !isListening) {
+                  startListening();
+                }
+              }
+            });
+          } else {
+            speak("メッセージの送信に失敗しました。", {
+              onEnd: () => {
+                // エラーメッセージの読み上げ終了後も、マイクを再開
+                if (voiceActivatedRef.current && !isListening) {
+                  startListening();
+                }
+              }
+            });
+          }
+        })();
+        return;
+      }
+    };
+  }, [
+    assemblySteps,
+    currentIdx,
+    handleSend,
+    isListening,
+    selectedChatId,
+    selectedStep,
+    showImageDialog,
+    speak,
+    startListening,
+    stepIndexes,
+    stopSpeaking,
+  ]);
+
   if (!selectedChatId) {
     return (
-      <div className="relative flex h-full w-full flex-1 items-center justify-center overflow-hidden rounded-3xl border border-dashed border-white/10 bg-white/5 text-white/70">
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(129,140,248,0.2),transparent_55%)]" />
-        <div className="flex flex-col items-center gap-6 px-10 text-center">
-          <div className="rounded-full border border-white/20 bg-white/10 px-5 py-2 text-xs uppercase tracking-[0.3em] text-white/60">
-            Ready to assemble
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-2xl font-semibold text-white">
-              組立マニュアルを選択してください
-            </h3>
-            <p className="text-sm text-white/70">
-              サイドバーでファイルを選ぶと、このエリアにステップ画像とチャットが表示されます。
-            </p>
+      <>
+        <div className="relative flex h-full w-full flex-1 items-center justify-center overflow-hidden rounded-3xl border border-dashed border-white/10 bg-white/5 text-white/70">
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(129,140,248,0.2),transparent_55%)]" />
+          <div className="flex flex-col items-center gap-6 px-10 text-center">
+            <div className="rounded-full border border-white/20 bg-white/10 px-5 py-2 text-xs uppercase tracking-[0.3em] text-white/60">
+              Ready to assemble
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-2xl font-semibold text-white">
+                組立マニュアルを選択してください
+              </h3>
+              <p className="text-sm text-white/70">
+                サイドバーでファイルを選ぶと、このエリアにステップ画像とチャットが表示されます。
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+        {isSupported && (
+          <VoiceMicButton
+            isListening={isListening}
+            isSpeaking={isSpeaking}
+            isSupported={isSupported}
+            onToggle={handleToggleListening}
+          />
+        )}
+      </>
     );
   }
 
   return (
-    <div className="relative flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_30px_80px_rgba(34,197,247,0.25)]">
+    <>
+      <div className="relative flex h-full w-full flex-1 min-h-0 flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_30px_80px_rgba(34,197,247,0.25)]">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(129,140,248,0.25),transparent_55%)]" />
       <header className="flex items-center justify-between border-b border-white/10 bg-gradient-to-r from-indigo-500/40 via-sky-500/30 to-cyan-400/30 px-6 py-4 text-white shadow-lg backdrop-blur-lg">
         <div className="flex items-center gap-4">
@@ -599,5 +869,14 @@ export function ChatWindow({
         stepIndex={selectedStep?.stepIndex ?? 0}
       />
     </div>
+    {isSupported && (
+      <VoiceMicButton
+        isListening={isListening}
+        isSpeaking={isSpeaking}
+        isSupported={isSupported}
+        onToggle={handleToggleListening}
+      />
+    )}
+  </>
   );
 }
