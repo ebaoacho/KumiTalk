@@ -63,6 +63,7 @@ export function ChatWindow({
     isListening,
     isSpeaking,
     isSupported,
+    currentTranscript,
     speak,
     stopSpeaking,
     startListening,
@@ -496,6 +497,7 @@ export function ChatWindow({
             isListening={isListening}
             isSpeaking={isSpeaking}
             isSupported={isSupported}
+            currentTranscript={currentTranscript}
             onToggle={handleToggleListening}
           />
         )}
@@ -874,6 +876,7 @@ export function ChatWindow({
         isListening={isListening}
         isSpeaking={isSpeaking}
         isSupported={isSupported}
+        currentTranscript={currentTranscript}
         onToggle={handleToggleListening}
       />
     )}

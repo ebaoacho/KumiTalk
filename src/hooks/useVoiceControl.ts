@@ -44,6 +44,7 @@ export function useVoiceControl({
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
+  const [currentTranscript, setCurrentTranscript] = useState("");
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -111,6 +112,7 @@ export function useVoiceControl({
         const command = parseVoiceCommand(transcript);
         onCommandRef.current?.(command);
         lastTranscriptRef.current = "";
+        setCurrentTranscript(""); // 確定時に中間結果をクリア
 
         // 5秒間の無音タイマーを開始
         silenceTimerRef.current = setTimeout(() => {
@@ -127,6 +129,7 @@ export function useVoiceControl({
         // 中間結果（話している途中）
         console.log("中間結果:", transcript);
         lastTranscriptRef.current = transcript;
+        setCurrentTranscript(transcript); // リアルタイムで中間結果を更新
       }
     };
 
@@ -149,6 +152,7 @@ export function useVoiceControl({
       }
 
       setIsListening(false);
+      setCurrentTranscript(""); // 認識終了時に中間結果をクリア
     };
 
     recognitionRef.current = recognition;
@@ -354,6 +358,7 @@ export function useVoiceControl({
     isListening,
     isSpeaking,
     isSupported,
+    currentTranscript,
     startListening,
     stopListening,
     speak,
