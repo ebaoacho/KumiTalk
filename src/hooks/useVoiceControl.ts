@@ -4,19 +4,54 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 // 音声コマンドで利用する定型フレーズ
 const RESERVED_COMMANDS = {
-  // ステップ移動
-  STEP_NUMBER: /ステップ\s*(\d+)/i,
-  NEXT_STEP: ["次", "次のステップ"],
-  PREV_STEP: ["戻って", "前のステップ"],
-  FIRST_STEP: ["最初", "最初に戻る"],
-  LAST_STEP: ["最後", "最後まで進む"],
-  ALL_STEPS: ["全て", "全てのステップ", "すべて", "すべてのステップ"],
+  // ステップ移動 - 複数パターンと正規表現を組み合わせ
+  STEP_NUMBER: [
+    /ステップ\s*(\d+)/i,
+    /(\d+)\s*番目/i,
+    /(\d+)\s*番/i,
+    /第\s*(\d+)\s*ステップ/i,
+    /(\d+)\s*ステップ目/i,
+  ] as RegExp[],
+  NEXT_STEP: [
+    "次", "次のステップ", "つぎ", "進む", "進んで",
+    "次に行く", "次へ", "forward", "フォワード", "先に進む"
+  ] as string[],
+  PREV_STEP: [
+    "戻って", "前のステップ", "もどって", "戻る", "前",
+    "前に戻る", "前へ", "back", "バック", "一つ前"
+  ] as string[],
+  FIRST_STEP: [
+    "最初", "最初に戻る", "はじめ", "初回", "1番目",
+    "スタート", "開始", "第一", "いちばん最初"
+  ] as string[],
+  LAST_STEP: [
+    "最後", "最後まで進む", "さいご", "終了", "最終",
+    "ラスト", "end", "エンド", "一番最後", "完了"
+  ] as string[],
+  ALL_STEPS: [
+    "全て", "全てのステップ", "すべて", "すべてのステップ",
+    "全部", "一覧", "オール", "全体", "総合", "まとめて"
+  ] as string[],
   // 画像操作
-  ZOOM_IN: ["拡大", "画像拡大"],
-  ZOOM_OUT: ["縮小", "画像縮小"],
+  ZOOM_IN: [
+    "拡大", "画像拡大", "ズーム", "ズームイン", "大きく",
+    "アップ", "でかく", "見やすく", "詳細表示"
+  ] as string[],
+  ZOOM_OUT: [
+    "縮小", "画像縮小", "ズームアウト", "小さく", "戻す",
+    "閉じる", "通常表示", "元に戻す", "ダウン"
+  ] as string[],
   // 音声制御
-  STOP_SPEAKING: ["しゃべらないで", "止まって", "ストップ"],
-} as const;
+  STOP_SPEAKING: [
+    "しゃべらないで", "止まって", "ストップ", "停止",
+    "やめて", "静かに", "黙って", "ミュート", "とめて"
+  ] as string[],
+  // ヘルプ機能
+  HELP: [
+    "ヘルプ", "助けて", "使い方", "コマンド一覧", "help",
+    "何ができる", "どうやって使う", "説明", "ガイド"
+  ] as string[],
+};
 
 export type VoiceCommand =
   | { type: "step"; stepNumber: number }
@@ -28,6 +63,7 @@ export type VoiceCommand =
   | { type: "zoomIn" }
   | { type: "zoomOut" }
   | { type: "stopSpeaking" }
+  | { type: "help"; category?: string }
   | { type: "chat"; text: string };
 
 interface UseVoiceControlOptions {
@@ -109,7 +145,7 @@ export function useVoiceControl({
       // 確定した結果（isFinal === true）の場合のみコマンド処理
       if (result.isFinal) {
         console.log("確定した音声認識結果:", transcript);
-        const command = parseVoiceCommand(transcript);
+        const command = parseAndValidateCommand(transcript);
         onCommandRef.current?.(command);
         lastTranscriptRef.current = "";
         setCurrentTranscript(""); // 確定時に中間結果をクリア
@@ -135,10 +171,32 @@ export function useVoiceControl({
 
     recognition.onerror = (event) => {
       if (!isMountedRef.current) return;
-      if (event.error !== "no-speech") {
-        onErrorRef.current?.(`音声認識エラー: ${event.error}`);
+      
+      // エラータイプに応じた適切な処理
+      switch (event.error) {
+        case "no-speech":
+          // 無音は通常の動作なのでエラーとして扱わない
+          console.log("音声が検出されませんでした");
+          break;
+        case "audio-capture":
+          onErrorRef.current?.("マイクにアクセスできません。マイクの設定を確認してください。");
+          break;
+        case "not-allowed":
+          onErrorRef.current?.("マイクの使用が許可されていません。ブラウザの設定を確認してください。");
+          break;
+        case "network":
+          onErrorRef.current?.("ネットワークエラーが発生しました。接続を確認してください。");
+          break;
+        case "aborted":
+          // ユーザーによる中止は正常な動作
+          console.log("音声認識が中止されました");
+          break;
+        default:
+          onErrorRef.current?.(`音声認識エラー: ${event.error}`);
       }
+      
       setIsListening(false);
+      setCurrentTranscript(""); // エラー時に中間結果をクリア
     };
 
     recognition.onend = () => {
@@ -173,42 +231,163 @@ export function useVoiceControl({
     };
   }, [language]);
 
-  const parseVoiceCommand = useCallback((text: string): VoiceCommand => {
-    const normalizedText = text.trim();
+  // 音声認識結果の正規化処理
+  const normalizeText = useCallback((text: string): string => {
+    return text
+      .trim()
+      .toLowerCase()
+      // 全角数字を半角に変換
+      .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+      // 漢数字を数字に変換（基本的なもの）
+      .replace(/一/g, '1')
+      .replace(/二/g, '2')
+      .replace(/三/g, '3')
+      .replace(/四/g, '4')
+      .replace(/五/g, '5')
+      .replace(/六/g, '6')
+      .replace(/七/g, '7')
+      .replace(/八/g, '8')
+      .replace(/九/g, '9')
+      .replace(/十/g, '10')
+      // よくある音声認識の誤変換を修正
+      .replace(/つき/g, '次')
+      .replace(/まえ/g, '前')
+      .replace(/さいご/g, '最後')
+      .replace(/はじめ/g, '最初')
+      .replace(/でかく/g, '拡大')
+      .replace(/ちいさく/g, '縮小')
+      // 余分な助詞や語尾を除去
+      .replace(/してください$/g, '')
+      .replace(/をお願いします$/g, '')
+      .replace(/だい$/g, '')
+      .replace(/です$/g, '')
+      // 余分な空白を除去
+      .replace(/\s+/g, ' ');
+  }, []);
 
-    if (RESERVED_COMMANDS.STOP_SPEAKING.some((cmd) => normalizedText.includes(cmd))) {
+  // ステップ番号を抽出する関数
+  const extractStepNumber = useCallback((text: string): number | null => {
+    for (const pattern of RESERVED_COMMANDS.STEP_NUMBER) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > 0) {
+          return num;
+        }
+      }
+    }
+    return null;
+  }, []);
+
+  // コマンドの一致度を計算する関数
+  const calculateMatchScore = useCallback((text: string, commands: string[]): number => {
+    let maxScore = 0;
+    for (const cmd of commands) {
+      if (text === cmd) {
+        return 1.0; // 完全一致
+      }
+      if (text.includes(cmd)) {
+        maxScore = Math.max(maxScore, 0.8); // 部分一致
+      }
+      if (cmd.includes(text)) {
+        maxScore = Math.max(maxScore, 0.6); // 逆部分一致
+      }
+    }
+    return maxScore;
+  }, []);
+
+  const parseVoiceCommand = useCallback((text: string): VoiceCommand => {
+    const normalizedText = normalizeText(text);
+    console.log('正規化されたテキスト:', normalizedText);
+
+    // 1. 音声制御コマンドは最優先（緊急性が高い）
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.STOP_SPEAKING) > 0.6) {
       return { type: "stopSpeaking" };
     }
 
-    const stepMatch = normalizedText.match(RESERVED_COMMANDS.STEP_NUMBER);
-    if (stepMatch) {
-      return { type: "step", stepNumber: parseInt(stepMatch[1], 10) };
+    // 2. ヘルプコマンドの確認
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.HELP) > 0.6) {
+      return { type: "help" };
     }
 
-    if (RESERVED_COMMANDS.NEXT_STEP.some((cmd) => normalizedText.includes(cmd))) {
+    // 3. ステップ番号の抽出（数字指定は優先度高）
+    const stepNumber = extractStepNumber(normalizedText);
+    if (stepNumber !== null) {
+      return { type: "step", stepNumber };
+    }
+
+    // 4. ナビゲーションコマンド（優先度順に確認）
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.NEXT_STEP) > 0.6) {
       return { type: "next" };
     }
-    if (RESERVED_COMMANDS.PREV_STEP.some((cmd) => normalizedText.includes(cmd))) {
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.PREV_STEP) > 0.6) {
       return { type: "prev" };
     }
-    if (RESERVED_COMMANDS.FIRST_STEP.some((cmd) => normalizedText.includes(cmd))) {
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.FIRST_STEP) > 0.6) {
       return { type: "first" };
     }
-    if (RESERVED_COMMANDS.LAST_STEP.some((cmd) => normalizedText.includes(cmd))) {
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.LAST_STEP) > 0.6) {
       return { type: "last" };
     }
-    if (RESERVED_COMMANDS.ALL_STEPS.some((cmd) => normalizedText.includes(cmd))) {
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.ALL_STEPS) > 0.6) {
       return { type: "all" };
     }
-    if (RESERVED_COMMANDS.ZOOM_IN.some((cmd) => normalizedText.includes(cmd))) {
+
+    // 5. 画像操作コマンド
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.ZOOM_IN) > 0.6) {
       return { type: "zoomIn" };
     }
-    if (RESERVED_COMMANDS.ZOOM_OUT.some((cmd) => normalizedText.includes(cmd))) {
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.ZOOM_OUT) > 0.6) {
       return { type: "zoomOut" };
     }
 
+    // 6. 該当しない場合はチャットとして処理
     return { type: "chat", text: normalizedText };
+  }, [normalizeText, extractStepNumber, calculateMatchScore]);
+
+  // コマンドの妥当性を検証する関数
+  const validateCommand = useCallback((command: VoiceCommand): { isValid: boolean; errorMessage?: string } => {
+    switch (command.type) {
+      case "step":
+        if (command.stepNumber < 1 || command.stepNumber > 999) {
+          return { 
+            isValid: false, 
+            errorMessage: `ステップ番号${command.stepNumber}は無効です。1から999の範囲で指定してください。` 
+          };
+        }
+        break;
+      case "chat":
+        if (!command.text || command.text.trim().length === 0) {
+          return { 
+            isValid: false, 
+            errorMessage: "メッセージが空です。" 
+          };
+        }
+        if (command.text.length > 500) {
+          return { 
+            isValid: false, 
+            errorMessage: "メッセージが長すぎます。500文字以内で入力してください。" 
+          };
+        }
+        break;
+    }
+    return { isValid: true };
   }, []);
+
+  // 強化されたコマンド解析関数（検証付き）
+  const parseAndValidateCommand = useCallback((text: string): VoiceCommand => {
+    const command = parseVoiceCommand(text);
+    const validation = validateCommand(command);
+    
+    if (!validation.isValid) {
+      console.warn('コマンド検証エラー:', validation.errorMessage);
+      onErrorRef.current?.(validation.errorMessage || 'コマンドが無効です');
+      // エラーの場合はヘルプを提案
+      return { type: "help" };
+    }
+    
+    return command;
+  }, [parseVoiceCommand, validateCommand]);
 
   const startListening = useCallback(() => {
     if (!isSupported || isSpeaking) return;
