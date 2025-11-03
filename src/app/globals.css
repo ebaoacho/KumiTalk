@@ -133,7 +133,36 @@
     }
   }
 
+  @keyframes slide-in-from-bottom {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
   .animate-pulse-scale {
     animation: pulse-scale 1.5s ease-in-out infinite;
+  }
+
+  .animate-in {
+    animation-duration: 0.3s;
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
+  }
+
+  .slide-in-from-bottom-2 {
+    animation-name: slide-in-from-bottom;
+  }
+
+  .animation-delay-75 {
+    animation-delay: 75ms;
+  }
+
+  .duration-300 {
+    animation-duration: 300ms;
   }
 }
