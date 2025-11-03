@@ -301,6 +301,15 @@ export function useVoiceControl({
 
         utterance.onerror = (event) => {
           if (!isMountedRef.current) return;
+          
+          // "interrupted" エラーは通常の動作なので、ユーザーにエラーとして表示しない
+          if (event.error === "interrupted") {
+            console.log("Speech synthesis was interrupted (normal behavior)");
+            setIsSpeaking(false);
+            options?.onEnd?.();
+            return;
+          }
+          
           console.error("Speech synthesis error:", event.error);
           setIsSpeaking(false);
           options?.onEnd?.();
