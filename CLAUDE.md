@@ -1,102 +1,110 @@
 # CLAUDE.md
 
-このファイルは、このリポジトリでコードを扱う際にClaude Code (claude.ai/code) に対してガイダンスを提供します。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 開発コマンド
+## Development Commands
 
 ```bash
-# Turbopackで開発サーバーを起動
+# Start development server with Turbopack
 npm run dev
 
-# アプリケーションをビルド
+# Build application
 npm run build
 
-# 本番サーバーを起動
+# Start production server
 npm start
 
-# ESLintを実行
+# Run ESLint
 npm run lint
 
-# Prismaコマンドを実行
-npx prisma generate     # Prismaクライアントを生成
-npx prisma db push      # スキーマ変更をデータベースにプッシュ
-npx prisma studio       # Prisma Studioを開く
+# Prisma commands
+npx prisma generate     # Generate Prisma client
+npx prisma db push      # Push schema changes to database
+npx prisma studio       # Open Prisma Studio
 ```
 
-## アーキテクチャ概要
+## Architecture Overview
 
-KumiTalkは、PDFマニュアルを解析してインタラクティブなガイダンスを提供することで、ユーザーの家具組み立てを支援するAIを使用したNext.jsアプリケーションです。
+KumiTalk is an AI-powered Next.js application that assists users with furniture assembly by analyzing PDF manuals and providing interactive guidance.
 
-### コアアーキテクチャ
+### Core Architecture
 
-- **フレームワーク**: TypeScriptとTailwind CSSを使用したNext.js 15のApp Router
-- **データベース**: Prisma ORMを使用したPostgreSQL
-- **AI統合**: PDF解析とチャット機能にGoogle Gemini API
-- **認証**: bcryptを使用したカスタムクッキーベースのセッション管理
-- **UIコンポーネント**: カスタムスタイリングを施したRadix UIプリミティブ
+- **Framework**: Next.js 15 with App Router using TypeScript and Tailwind CSS
+- **Database**: PostgreSQL with Prisma ORM
+- **AI Integration**: Google Gemini API for PDF analysis, chat functionality, and video generation
+- **Authentication**: Custom cookie-based session management with bcrypt
+- **UI Components**: Radix UI primitives with custom styling
 
-### 主要なデータフロー
+### Key Data Flow
 
-1. **マニュアル解析**: PDFがアップロードされ、Geminiによって組み立て手順が解析・抽出される
-2. **ステップ生成**: 各ステップで色分けされた部品の視覚化と詳細な指示が生成される
-3. **インタラクティブチャット**: ユーザーは特定の組み立てステップについて、文脈に応じたAI応答で質問できる
+1. **Manual Analysis**: PDFs are uploaded and analyzed by Gemini to extract assembly steps
+2. **Step Generation**: Each step generates color-coded part visualizations and detailed instructions
+3. **Video Generation**: Assembly animations are created using Gemini Veo 3.1 for visual guidance
+4. **Interactive Chat**: Users can ask questions about specific assembly steps with context-aware AI responses
 
-### データベーススキーマ
+### Database Schema
 
-- **User**: メール/パスワード認証を使用した基本的なユーザー管理
-- **Document**: メタデータ付きでアップロードされたPDFマニュアル
-- **Chat**: ドキュメントに紐づけられた会話セッション
-- **Message**: ステップコンテキスト付きのチャットメッセージ
-- **AssemblyStep**: 画像と部品データを含む生成された組み立て指示
+- **User**: Basic user management with email/password authentication
+- **Document**: Uploaded PDF manuals with metadata
+- **Chat**: Conversation sessions linked to documents
+- **Message**: Chat messages with role and step context
+- **AssemblyStep**: Generated assembly instructions with images, videos, and parts data
 
-### APIルート構造
+### API Route Structure
 
-- `/api/auth/*` - 認証エンドポイント（ログイン/サインアップ/ログアウト）
-- `/api/analyze-manual` - Geminiを使用したPDF解析
-- `/api/chat/*` - チャットの作成と取得
-- `/api/messages/*` - 会話のメッセージ処理
-- `/api/assembly/*` - 組み立てステップの生成と管理
-- `/api/gemini` - 直接のGemini APIインタラクション
+- `/api/auth/*` - Authentication endpoints (login/signup/logout)
+- `/api/analyze-manual` - PDF analysis using Gemini
+- `/api/chat/*` - Chat creation and retrieval
+- `/api/messages/*` - Conversation message handling
+- `/api/assembly/*` - Assembly step generation and management
+- `/api/gemini` - Direct Gemini API interaction
+- `/api/generate-video` - Video generation using Gemini Veo 3.1
 
-### コンポーネントアーキテクチャ
+### Component Architecture
 
-- **ページ**: `/chat`、`/analyzer`、認証ページ（`/login`、`/signup`）
-- **コアコンポーネント**: 
-  - `chat-interface.tsx` - ステップナビゲーション付きのメインチャットUI
-  - `manual-analyzer.tsx` - PDFアップロードと解析インターフェース
-  - `VoiceMicButton.tsx` - 音声入力機能
-- **UIコンポーネント**: `/components/ui/`内のRadixベースの再利用可能コンポーネント
+- **Pages**: `/chat`, `/analyzer`, authentication pages (`/login`, `/signup`)
+- **Core Components**: 
+  - `chat-interface.tsx` - Main chat UI with step navigation
+  - `manual-analyzer.tsx` - PDF upload and analysis interface
+  - `VoiceMicButton.tsx` - Voice input functionality
+  - `VideoPlayer.tsx` - Assembly video playback component
+- **UI Components**: Radix-based reusable components in `/components/ui/`
 
-### 必要な環境変数
+### Required Environment Variables
 
-- `DATABASE_URL` - PostgreSQL接続文字列
-- `DIRECT_URL` - Prisma用の直接データベースURL
-- `GEMINI_API_KEY` - Google Gemini APIキー
+- `DATABASE_URL` - PostgreSQL connection string
+- `DIRECT_URL` - Direct database URL for Prisma
+- `GEMINI_API_KEY` - Google Gemini API key
 
-### ファイル構成
+### File Structure
 
-- `src/app/` - Next.js app routerページとAPIルート
-- `src/components/` - 再利用可能なReactコンポーネント
-- `src/lib/` - ユーティリティ関数（認証、Prisma、進捗）
-- `src/hooks/` - カスタムReactフック
-- `src/types/` - TypeScript型定義
-- `prisma/` - データベーススキーマとマイグレーション
-- `documents/` - ドキュメントと参考資料
-- `images/` - テスト用サンプル組み立て画像
+- `src/app/` - Next.js app router pages and API routes
+- `src/components/` - Reusable React components
+- `src/lib/` - Utility functions (auth, Prisma, progress)
+- `src/hooks/` - Custom React hooks
+- `src/types/` - TypeScript type definitions
+- `prisma/` - Database schema and migrations
+- `documents/` - Documentation and reference materials
+- `images/` - Sample assembly images for testing
+- `video/` - Generated assembly videos
 
-### 主要な技術詳細
+### Key Technical Details
 
-- より高速な開発ビルドのためにTurbopackを使用
-- 7日間の有効期限を持つクッキーベースセッション
-- PDF処理はGemini解析のためにBase64に変換
-- 組み立てステップには色割り当て付きの部品データをJSONで保存
-- アクセシビリティのために音声機能を統合
-- 長時間実行される操作のための進捗追跡システム
+- Uses Turbopack for faster development builds
+- Cookie-based sessions with 7-day expiration
+- PDF processing converts to Base64 for Gemini analysis
+- Assembly steps store parts data as JSON with color assignments
+- Voice functionality integrated for accessibility
+- Progress tracking system for long-running operations
+- Video generation uses Gemini Veo 3.1 with image-to-video conversion
+- Consistent part color coding across all assembly steps
 
-### 開発メモ
+### Development Notes
 
-- ルートページは新規ユーザーオンボーディングのために`/signup`にリダイレクト
-- ほとんどの機能には認証が必要
-- 組み立てステップ画像は色分けされた部品でGeminiによって生成
-- チャット機能は各組み立てステップのコンテキストを維持
-- データベース全体でUUID主キーを使用
+- Root page redirects to `/signup` for new user onboarding
+- Most functionality requires authentication
+- Assembly step images are generated by Gemini with color-coded parts
+- Chat functionality maintains context for each assembly step
+- UUID primary keys used throughout database
+- Video generation can take 30+ attempts with 10-second intervals
+- ESLint is disabled during builds for faster deployment
