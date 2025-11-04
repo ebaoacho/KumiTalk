@@ -66,6 +66,7 @@ export interface AssemblyStep {
   title: string;
   description: string;
   imageBase64?: string;
+  videoBase64?: string;
   parts: AssemblyPart[];
 }
 

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AssemblyStep, Chat, Message } from "./chat-interface";
 import { ShowImageDialog } from "../dialog/show-image-dialog";
+import { VideoPlayer } from "@/components/video/VideoPlayer";
 import MarkdownRenderer from "./markdown-renderer";
 import { VoiceMicButton } from "@/components/voice/VoiceMicButton";
 import { VoiceCommandFeedback } from "@/components/voice/VoiceCommandFeedback";
@@ -766,6 +767,15 @@ export function ChatWindow({
                          画像は生成されませんでした
                        </div>
                      )}
+                     {selectedChatId && (
+                      <div className="mt-4">
+                        <VideoPlayer
+                          chatId={selectedChatId}
+                          stepIndex={selectedStep.stepIndex}
+                          existingVideoBase64={selectedStep.videoBase64}
+                        />
+                      </div>
+                    )}
                    </div>
                    <div className="md:flex-1">
                      <h5 className="mb-2 text-xl font-semibold text-white">{selectedStep.title}</h5>
