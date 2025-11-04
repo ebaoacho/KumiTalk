@@ -80,6 +80,7 @@ model AssemblyStep {
   title       String   @db.Text
   description String   @db.Text
   imageBase64 String?  @db.Text
+  videoBase64 String?  @db.Text
   parts       Json
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt      @map("updated_at") @db.Timestamptz(6)
