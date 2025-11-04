@@ -11,6 +11,7 @@ import type { AssemblyStep, Chat, Message } from "./chat-interface";
 import { ShowImageDialog } from "../dialog/show-image-dialog";
 import MarkdownRenderer from "./markdown-renderer";
 import { VoiceMicButton } from "@/components/voice/VoiceMicButton";
+import { VoiceCommandFeedback } from "@/components/voice/VoiceCommandFeedback";
 import { useVoiceControl, type VoiceCommand } from "@/hooks/useVoiceControl";
 
 interface ChatWindowProps {
@@ -51,6 +52,11 @@ export function ChatWindow({
   const [isLoading, setIsLoading] = useState(false);
   const [stepFilter, setStepFilter] = useState<StepFilter>("all");
   const [showImageDialog, setShowImageDialog] = useState(false);
+  const [voiceFeedback, setVoiceFeedback] = useState<{
+    type: 'success' | 'error' | 'info' | 'help';
+    message: string;
+    timestamp: Date;
+  } | null>(null);
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -63,6 +69,7 @@ export function ChatWindow({
     isListening,
     isSpeaking,
     isSupported,
+    currentTranscript,
     speak,
     stopSpeaking,
     startListening,
@@ -326,6 +333,24 @@ export function ChatWindow({
         return;
       }
 
+      // ヘルプコマンドの処理
+      if (command.type === "help") {
+        const helpMessage = `
+          音声コマンドをご利用いただけます。
+          ナビゲーション：「次」で次のステップ、「戻って」で前のステップ、「ステップ3」で指定ステップに移動。
+          表示操作：「拡大」で画像拡大、「縮小」で拡大表示を閉じる。
+          その他：「全て」で全ステップ表示、「止まって」で音声停止。
+          何か質問があれば、そのまま話しかけてください。
+        `;
+        speak(helpMessage.replace(/\s+/g, ' ').trim());
+        setVoiceFeedback({
+          type: 'help',
+          message: '音声コマンドのヘルプを表示しました',
+          timestamp: new Date()
+        });
+        return;
+      }
+
       voiceActivatedRef.current = true;
 
       if (!selectedChatId) {
@@ -337,8 +362,20 @@ export function ChatWindow({
         const target = assemblySteps.find((step) => step.stepIndex === command.stepNumber);
         if (target) {
           setStepFilter(command.stepNumber);
+          speak(`ステップ${command.stepNumber}に移動しました。${target.title}`);
+          setVoiceFeedback({
+            type: 'success',
+            message: `ステップ${command.stepNumber}に移動`,
+            timestamp: new Date()
+          });
         } else {
-          speak(`ステップ${command.stepNumber}は存在しません。`);
+          const maxStep = assemblySteps.length > 0 ? Math.max(...assemblySteps.map(s => s.stepIndex)) : 0;
+          speak(`ステップ${command.stepNumber}は存在しません。利用可能なステップは1から${maxStep}です。`);
+          setVoiceFeedback({
+            type: 'error',
+            message: `ステップ${command.stepNumber}は存在しません`,
+            timestamp: new Date()
+          });
         }
         return;
       }
@@ -349,13 +386,29 @@ export function ChatWindow({
           return;
         }
         if (currentIdx === -1) {
-          setStepFilter(stepIndexes[0]);
+          const firstStep = stepIndexes[0];
+          setStepFilter(firstStep);
+          const target = assemblySteps.find(step => step.stepIndex === firstStep);
+          speak(`ステップ${firstStep}に移動しました。${target?.title || ''}`);
           return;
         }
         if (currentIdx < stepIndexes.length - 1) {
-          setStepFilter(stepIndexes[currentIdx + 1]);
+          const nextStep = stepIndexes[currentIdx + 1];
+          setStepFilter(nextStep);
+          const target = assemblySteps.find(step => step.stepIndex === nextStep);
+          speak(`ステップ${nextStep}に移動しました。${target?.title || ''}`);
+          setVoiceFeedback({
+            type: 'success',
+            message: `次のステップ${nextStep}に移動`,
+            timestamp: new Date()
+          });
         } else {
           speak("これが最後のステップです。");
+          setVoiceFeedback({
+            type: 'info',
+            message: '最後のステップです',
+            timestamp: new Date()
+          });
         }
         return;
       }
@@ -366,11 +419,17 @@ export function ChatWindow({
           return;
         }
         if (currentIdx === -1) {
-          setStepFilter(stepIndexes[stepIndexes.length - 1]);
+          const lastStep = stepIndexes[stepIndexes.length - 1];
+          setStepFilter(lastStep);
+          const target = assemblySteps.find(step => step.stepIndex === lastStep);
+          speak(`ステップ${lastStep}に移動しました。${target?.title || ''}`);
           return;
         }
         if (currentIdx > 0) {
-          setStepFilter(stepIndexes[currentIdx - 1]);
+          const prevStep = stepIndexes[currentIdx - 1];
+          setStepFilter(prevStep);
+          const target = assemblySteps.find(step => step.stepIndex === prevStep);
+          speak(`ステップ${prevStep}に移動しました。${target?.title || ''}`);
         } else {
           speak("これが最初のステップです。");
         }
@@ -382,7 +441,10 @@ export function ChatWindow({
           speak("ステップが登録されていません。");
           return;
         }
-        setStepFilter(stepIndexes[0]);
+        const firstStep = stepIndexes[0];
+        setStepFilter(firstStep);
+        const target = assemblySteps.find(step => step.stepIndex === firstStep);
+        speak(`最初のステップ${firstStep}に移動しました。${target?.title || ''}`);
         return;
       }
 
@@ -391,21 +453,27 @@ export function ChatWindow({
           speak("ステップが登録されていません。");
           return;
         }
-        setStepFilter(stepIndexes[stepIndexes.length - 1]);
+        const lastStep = stepIndexes[stepIndexes.length - 1];
+        setStepFilter(lastStep);
+        const target = assemblySteps.find(step => step.stepIndex === lastStep);
+        speak(`最後のステップ${lastStep}に移動しました。${target?.title || ''}`);
         return;
       }
 
       if (command.type === "all") {
         setStepFilter("all");
+        speak(`全${assemblySteps.length}ステップを表示しています。`);
         return;
       }
 
       if (command.type === "zoomIn") {
         if (selectedStep?.imageBase64) {
           setShowImageDialog(true);
-          speak("画像を拡大表示しました。");
+          speak(`ステップ${selectedStep.stepIndex}の画像を拡大表示しました。`);
+        } else if (stepFilter === "all") {
+          speak("画像を拡大するには、まず特定のステップを選択してください。");
         } else {
-          speak("拡大できるステップが選択されていません。");
+          speak("このステップには拡大できる画像がありません。");
         }
         return;
       }
@@ -415,7 +483,7 @@ export function ChatWindow({
           setShowImageDialog(false);
           speak("拡大表示を閉じました。");
         } else {
-          speak("現在拡大表示されていません。");
+          speak("現在画像は拡大表示されていません。");
         }
         return;
       }
@@ -496,6 +564,7 @@ export function ChatWindow({
             isListening={isListening}
             isSpeaking={isSpeaking}
             isSupported={isSupported}
+            currentTranscript={currentTranscript}
             onToggle={handleToggleListening}
           />
         )}
@@ -874,9 +943,14 @@ export function ChatWindow({
         isListening={isListening}
         isSpeaking={isSpeaking}
         isSupported={isSupported}
+        currentTranscript={currentTranscript}
         onToggle={handleToggleListening}
       />
     )}
+    <VoiceCommandFeedback
+      feedback={voiceFeedback}
+      onDismiss={() => setVoiceFeedback(null)}
+    />
   </>
   );
 }
