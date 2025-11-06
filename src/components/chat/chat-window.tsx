@@ -54,7 +54,7 @@ export function ChatWindow({
   const [stepFilter, setStepFilter] = useState<StepFilter>("all");
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [voiceFeedback, setVoiceFeedback] = useState<{
-    type: 'success' | 'error' | 'info' | 'help';
+    type: 'success' | 'error' | 'info';
     message: string;
     timestamp: Date;
   } | null>(null);
@@ -74,7 +74,7 @@ export function ChatWindow({
     speak,
     stopSpeaking,
     startListening,
-    toggleListening,
+    stopListening,
   } = useVoiceControl({
     onCommand: (command) => voiceCommandHandlerRef.current(command),
     onError: (error) => voiceErrorHandlerRef.current(error),
@@ -82,13 +82,114 @@ export function ChatWindow({
   });
 
   const voiceActivatedRef = useRef(false);
-  const prevSpokenFilterRef = useRef<StepFilter | null>(null);
+  const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
+  const voiceResumeTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const isRecognizedVoiceQuestion = useCallback((content: string) => {
+    const trimmed = content.trim();
+    if (trimmed.length < 5) {
+      return false;
+    }
+
+    const collapsed = trimmed.replace(/\s+/g, "");
+    if (collapsed.length < 3) {
+      return false;
+    }
+
+    if (!/[一-龠ぁ-んァ-ンa-zA-Z0-9]/u.test(collapsed)) {
+      return false;
+    }
+
+    const uniqueChars = new Set(collapsed);
+    if (uniqueChars.size <= 1) {
+      return false;
+    }
+
+    const hasQuestionMark = /[?？]/.test(trimmed);
+    const hasQuestionEnding = /(か|かな|かい|かしら)([?？]*)$/u.test(trimmed);
+    const questionKeywords = [
+      "教えて",
+      "どう",
+      "どこ",
+      "どれ",
+      "どの",
+      "なぜ",
+      "なに",
+      "何",
+      "理由",
+      "方法",
+      "確認",
+      "説明",
+      "できない",
+      "できる",
+      "使い方",
+      "わからない",
+      "help",
+      "why",
+      "how",
+      "what",
+      "where",
+      "when",
+      "which",
+      "explain",
+      "step",
+      "ステップ",
+    ];
+    const hasKeyword = questionKeywords.some((keyword) => trimmed.includes(keyword));
+
+    return hasKeyword || hasQuestionMark || hasQuestionEnding;
+  }, []);
+
+  const sanitizeMarkdownForSpeech = useCallback((text: string) => {
+    let processed = text;
+    processed = processed.replace(/```[\s\S]*?```/g, ""); // Remove code blocks entirely
+    processed = processed.replace(/`([^`]+)`/g, "$1"); // Inline code
+    processed = processed.replace(/!\[([^\]]*)\]\([^\)]+\)/g, "$1"); // Images
+    processed = processed.replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1"); // Links
+    processed = processed.replace(/[*_~]+/g, ""); // Emphasis markers
+    processed = processed.replace(/^>\s?/gm, ""); // Blockquotes
+    processed = processed.replace(/^[-+*]\s+/gm, ""); // Bullet markers
+    processed = processed.replace(/#+\s*/g, ""); // Headings
+    processed = processed.replace(/[:：]/g, "、"); // Colons to pause
+    processed = processed.replace(/\r?\n\r?\n/g, "。"); // Paragraph breaks
+    processed = processed.replace(/\r?\n/g, "、"); // Line breaks
+    processed = processed.replace(/\s{2,}/g, " "); // Extra spaces
+    return processed.trim();
+  }, []);
 
   useEffect(() => {
     voiceErrorHandlerRef.current = (error) => {
       console.error("音声コントロールエラー:", error);
     };
   }, []);
+
+  useEffect(() => {
+    if (voiceResumeTimerRef.current) {
+      clearTimeout(voiceResumeTimerRef.current);
+      voiceResumeTimerRef.current = null;
+    }
+
+    if (!voiceActivatedRef.current) {
+      return;
+    }
+
+    if (isVoiceProcessing || isSpeaking || isListening) {
+      return;
+    }
+
+    voiceResumeTimerRef.current = setTimeout(() => {
+      if (voiceActivatedRef.current && !isVoiceProcessing && !isSpeaking && !isListening) {
+        startListening();
+      }
+    }, 400);
+
+    return () => {
+      if (voiceResumeTimerRef.current) {
+        clearTimeout(voiceResumeTimerRef.current);
+        voiceResumeTimerRef.current = null;
+      }
+    };
+  }, [isListening, isSpeaking, isVoiceProcessing, startListening]);
 
   useEffect(() => {
     setStepFilter("all");
@@ -206,56 +307,36 @@ export function ChatWindow({
     return () => window.removeEventListener("keydown", onKey);
   }, [goNext, goPrev, stepFilter]);
 
-  const announceCurrentSelection = useCallback(() => {
-    if (assemblySteps.length === 0) {
-      speak("まだステップが読み込まれていません。");
-      return;
-    }
-
-    if (stepFilter === "all") {
-      const summary = chatMeta?.title
-        ? `${chatMeta.title}の全ステップ一覧です。${assemblySteps.length}件のステップがあります。`
-        : `全ステップ一覧です。${assemblySteps.length}件のステップがあります。`;
-      speak(summary);
-      return;
-    }
-
-    if (typeof stepFilter === "number") {
-      const step = assemblySteps.find((s) => s.stepIndex === stepFilter);
-      if (step) {
-        speak(`ステップ${step.stepIndex}です。${step.description}`);
-      }
-    }
-  }, [assemblySteps, chatMeta?.title, speak, stepFilter]);
-
-  // ステップ変更時に自動的に音声出力（マイクボタン不要）
-  useEffect(() => {
-    if (prevSpokenFilterRef.current === stepFilter) return;
-    if (assemblySteps.length === 0) return;
-
-    prevSpokenFilterRef.current = stepFilter;
-    announceCurrentSelection();
-  }, [announceCurrentSelection, stepFilter, assemblySteps.length]);
-
   const handleToggleListening = useCallback(() => {
-    if (!voiceActivatedRef.current) {
-      voiceActivatedRef.current = true;
+    if (isVoiceProcessing) {
+      return;
     }
 
-    // 音声出力中の場合は、まず音声を停止してから入力を開始
+    // 音声出力を強制停止してすぐに聞き直す
     if (isSpeaking) {
+      if (!voiceActivatedRef.current) {
+        voiceActivatedRef.current = true;
+      }
       stopSpeaking();
-      // 少し待ってから音声入力を開始
       setTimeout(() => {
-        if (!isListening) {
+        if (voiceActivatedRef.current && !isListening) {
           startListening();
         }
-      }, 100);
+      }, 120);
       return;
     }
 
-    toggleListening();
-  }, [isListening, isSpeaking, startListening, stopSpeaking, toggleListening]);
+    if (voiceActivatedRef.current) {
+      voiceActivatedRef.current = false;
+      stopListening();
+      return;
+    }
+
+    voiceActivatedRef.current = true;
+    if (!isListening) {
+      startListening();
+    }
+  }, [isListening, isSpeaking, isVoiceProcessing, startListening, stopListening, stopSpeaking]);
 
   const filteredMessages = useMemo(() => messages, [messages]);
 
@@ -331,24 +412,6 @@ export function ChatWindow({
     voiceCommandHandlerRef.current = (command: VoiceCommand) => {
       if (command.type === "stopSpeaking") {
         stopSpeaking();
-        return;
-      }
-
-      // ヘルプコマンドの処理
-      if (command.type === "help") {
-        const helpMessage = `
-          音声コマンドをご利用いただけます。
-          ナビゲーション：「次」で次のステップ、「戻って」で前のステップ、「ステップ3」で指定ステップに移動。
-          表示操作：「拡大」で画像拡大、「縮小」で拡大表示を閉じる。
-          その他：「全て」で全ステップ表示、「止まって」で音声停止。
-          何か質問があれば、そのまま話しかけてください。
-        `;
-        speak(helpMessage.replace(/\s+/g, ' ').trim());
-        setVoiceFeedback({
-          type: 'help',
-          message: '音声コマンドのヘルプを表示しました',
-          timestamp: new Date()
-        });
         return;
       }
 
@@ -499,29 +562,50 @@ export function ChatWindow({
                 startListening();
               }
             }
+            });
+          return;
+        }
+        if (!isRecognizedVoiceQuestion(voiceContent)) {
+          speak("質問として認識できませんでした。もう一度はっきりと質問してください。", {
+            onEnd: () => {
+              if (voiceActivatedRef.current && !isListening) {
+                startListening();
+              }
+            },
+          });
+          setVoiceFeedback({
+            type: 'error',
+            message: '音声が質問として認識されませんでした',
+            timestamp: new Date(),
           });
           return;
         }
         void (async () => {
-          const aiMessage = await handleSend(selectedChatId, voiceContent);
-          if (aiMessage) {
-            speak(aiMessage.content, {
-              onEnd: () => {
-                // AI応答の読み上げ終了後、自動的にマイクを再開（対話継続）
-                if (voiceActivatedRef.current && !isListening) {
-                  startListening();
+          setIsVoiceProcessing(true);
+          try {
+            const aiMessage = await handleSend(selectedChatId, voiceContent);
+            if (aiMessage) {
+              const spokenText = sanitizeMarkdownForSpeech(aiMessage.content) || "回答を読み上げできませんでした。";
+              speak(spokenText, {
+                onEnd: () => {
+                  // AI応答の読み上げ終了後、自動的にマイクを再開（対話継続）
+                  if (voiceActivatedRef.current && !isListening) {
+                    startListening();
+                  }
                 }
-              }
-            });
-          } else {
-            speak("メッセージの送信に失敗しました。", {
-              onEnd: () => {
-                // エラーメッセージの読み上げ終了後も、マイクを再開
-                if (voiceActivatedRef.current && !isListening) {
-                  startListening();
+              });
+            } else {
+              speak("メッセージの送信に失敗しました。", {
+                onEnd: () => {
+                  // エラーメッセージの読み上げ終了後も、マイクを再開
+                  if (voiceActivatedRef.current && !isListening) {
+                    startListening();
+                  }
                 }
-              }
-            });
+              });
+            }
+          } finally {
+            setIsVoiceProcessing(false);
           }
         })();
         return;
@@ -532,6 +616,9 @@ export function ChatWindow({
     currentIdx,
     handleSend,
     isListening,
+    isRecognizedVoiceQuestion,
+    isVoiceProcessing,
+    sanitizeMarkdownForSpeech,
     selectedChatId,
     selectedStep,
     showImageDialog,
@@ -566,6 +653,7 @@ export function ChatWindow({
             isSpeaking={isSpeaking}
             isSupported={isSupported}
             currentTranscript={currentTranscript}
+            isProcessing={isVoiceProcessing}
             onToggle={handleToggleListening}
           />
         )}
@@ -954,6 +1042,7 @@ export function ChatWindow({
         isSpeaking={isSpeaking}
         isSupported={isSupported}
         currentTranscript={currentTranscript}
+        isProcessing={isVoiceProcessing}
         onToggle={handleToggleListening}
       />
     )}

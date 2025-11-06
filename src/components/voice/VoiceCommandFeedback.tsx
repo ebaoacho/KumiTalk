@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, AlertCircle, Info, HelpCircle } from "lucide-react";
+import { CheckCircle, AlertCircle, Info } from "lucide-react";
 
 interface VoiceCommandFeedback {
-  type: 'success' | 'error' | 'info' | 'help';
+  type: 'success' | 'error' | 'info';
   message: string;
   timestamp: Date;
 }
@@ -41,8 +41,6 @@ export function VoiceCommandFeedback({
         return <CheckCircle className="h-4 w-4" />;
       case 'error':
         return <AlertCircle className="h-4 w-4" />;
-      case 'help':
-        return <HelpCircle className="h-4 w-4" />;
       default:
         return <Info className="h-4 w-4" />;
     }
@@ -54,8 +52,6 @@ export function VoiceCommandFeedback({
         return 'bg-green-500/90 text-white border-green-400';
       case 'error':
         return 'bg-red-500/90 text-white border-red-400';
-      case 'help':
-        return 'bg-blue-500/90 text-white border-blue-400';
       default:
         return 'bg-gray-500/90 text-white border-gray-400';
     }
