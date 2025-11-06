@@ -227,6 +227,21 @@ export function ChatInterface({ userId }: { userId: string }) {
     setSelectedChatId(null);
   }, []);
 
+  const handleStepVideoUpdate = useCallback(
+    (chatId: string, stepIndex: number, videoBase64: string) => {
+      setAssemblyStepStore((prev) => {
+        const steps = prev[chatId];
+        if (!steps) return prev;
+        const updatedSteps = steps.map((step) =>
+          step.stepIndex === stepIndex
+            ? { ...step, videoBase64 }
+            : step
+        );
+        return { ...prev, [chatId]: updatedSteps };
+      });
+    },
+    []
+  );
   const requestDeleteChat = useCallback(
     (chatId: string) => {
       setPendingDeleteChatId(chatId);
@@ -316,6 +331,12 @@ export function ChatInterface({ userId }: { userId: string }) {
             onBack={handleBackToLibrary}
             assemblySteps={activeAssemblySteps as AssemblyStep[]}
             isProcessingAssembly={isAssemblyLoading || isCreatingChat}
+            onStepVideoUpdate={
+              selectedChatId
+                ? (stepIndex, videoBase64) =>
+                    handleStepVideoUpdate(selectedChatId, stepIndex, videoBase64)
+                : undefined
+            }
           />
         </div>
       )}

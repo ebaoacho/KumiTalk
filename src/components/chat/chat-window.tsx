@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AssemblyStep, Chat, Message } from "./chat-interface";
 import { ShowImageDialog } from "../dialog/show-image-dialog";
+import { ShowVideoDialog } from "@/components/dialog/show-video-dialog";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
 import MarkdownRenderer from "./markdown-renderer";
 import { VoiceMicButton } from "@/components/voice/VoiceMicButton";
@@ -21,6 +22,7 @@ interface ChatWindowProps {
   onBack?: () => void;
   assemblySteps?: AssemblyStep[];
   isProcessingAssembly?: boolean;
+  onStepVideoUpdate?: (stepIndex: number, videoBase64: string) => void;
 }
 
 type StepFilter = "all" | number;
@@ -44,6 +46,7 @@ export function ChatWindow({
   onBack,
   assemblySteps = [],
   isProcessingAssembly = false,
+  onStepVideoUpdate,
 }: ChatWindowProps) {
   const { fetchWithProgress } = useProgress();
 
@@ -53,6 +56,8 @@ export function ChatWindow({
   const [isLoading, setIsLoading] = useState(false);
   const [stepFilter, setStepFilter] = useState<StepFilter>("all");
   const [showImageDialog, setShowImageDialog] = useState(false);
+  const [showVideoDialog, setShowVideoDialog] = useState(false);
+  const [videoDialogSource, setVideoDialogSource] = useState<string | null>(null);
   const [voiceFeedback, setVoiceFeedback] = useState<{
     type: 'success' | 'error' | 'info';
     message: string;
@@ -84,6 +89,7 @@ export function ChatWindow({
   const voiceActivatedRef = useRef(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
   const voiceResumeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [videoOverrides, setVideoOverrides] = useState<Record<number, string>>({});
 
   const isRecognizedVoiceQuestion = useCallback((content: string) => {
     const trimmed = content.trim();
@@ -256,6 +262,12 @@ export function ChatWindow({
       ? assemblySteps.find((step) => step.stepIndex === stepFilter) ?? null
       : null;
 
+  const currentVideoBase64 = useMemo(() => {
+    if (!selectedStep) return undefined;
+    const override = videoOverrides[selectedStep.stepIndex];
+    return override ?? selectedStep.videoBase64 ?? undefined;
+  }, [selectedStep, videoOverrides]);
+
   // ステップの並び（インデックス順に揃える）
   const stepIndexes = useMemo(
     () => [...assemblySteps.map((s) => s.stepIndex)].sort((a, b) => a - b),
@@ -412,6 +424,14 @@ export function ChatWindow({
     event.preventDefault();
     void handleSend(selectedChatId);
   };
+
+  const handleOpenVideoDialog = useCallback(
+    (videoBase64: string) => {
+      setVideoDialogSource(videoBase64);
+      setShowVideoDialog(true);
+    },
+    []
+  );
 
   useEffect(() => {
     voiceCommandHandlerRef.current = (command: VoiceCommand) => {
@@ -896,15 +916,6 @@ export function ChatWindow({
                          画像は生成されませんでした
                        </div>
                      )}
-                     {selectedChatId && (
-                      <div className="mt-4">
-                        <VideoPlayer
-                          chatId={selectedChatId}
-                          stepIndex={selectedStep.stepIndex}
-                          existingVideoBase64={selectedStep.videoBase64}
-                        />
-                      </div>
-                    )}
                    </div>
                    <div className="md:flex-1">
                      <h5 className="mb-2 text-xl font-semibold text-white">{selectedStep.title}</h5>
@@ -927,27 +938,43 @@ export function ChatWindow({
                          </div>
                        </div>
                      )}
-                     <div className="mt-4 flex flex-wrap gap-2">
-                       <Button
-                         type="button"
-                         className="rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-900 hover:from-cyan-300 hover:to-emerald-300"
-                         onClick={() => setShowImageDialog(true)}
-                       >
-                         画像を拡大表示
-                       </Button>
-                       <Button
-                         variant="outline"
-                         type="button"
-                         className="rounded-full border-white/20 bg-white/10 text-white hover:bg-white/20"
-                         onClick={() => setStepFilter("all")}
-                       >
-                         全ステップを表示
-                       </Button>
-                     </div>
-                   </div>
-                 </div>
-               </article>
-             </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        className="rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-900 hover:from-cyan-300 hover:to-emerald-300"
+                        onClick={() => setShowImageDialog(true)}
+                      >
+                        画像を拡大表示
+                      </Button>
+                      {selectedChatId && (
+                        <VideoPlayer
+                          chatId={selectedChatId}
+                          stepIndex={selectedStep.stepIndex}
+                          existingVideoBase64={currentVideoBase64}
+                          onVideoGenerated={(video) => {
+                            setVideoOverrides((prev) => ({
+                              ...prev,
+                              [selectedStep.stepIndex]: video,
+                            }));
+                            onStepVideoUpdate?.(selectedStep.stepIndex, video);
+                          }}
+                          onOpenVideoDialog={handleOpenVideoDialog}
+                          className="min-w-[180px]"
+                        />
+                      )}
+                      <Button
+                        variant="outline"
+                        type="button"
+                        onClick={() => setStepFilter("all")}
+                        className="rounded-full border-white/20 bg-white/10 text-white hover:bg-white/20"
+                      >
+                        全ステップ表示
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
            )
           )}
         </section>
@@ -1074,6 +1101,17 @@ export function ChatWindow({
         open={showImageDialog}
         onOpenChange={setShowImageDialog}
         imageBase64={selectedStep?.imageBase64 ?? ""}
+        stepIndex={selectedStep?.stepIndex ?? 0}
+      />
+      <ShowVideoDialog
+        open={showVideoDialog}
+        onOpenChange={(open) => {
+          setShowVideoDialog(open);
+          if (!open) {
+            setVideoDialogSource(null);
+          }
+        }}
+        videoBase64={videoDialogSource ?? ""}
         stepIndex={selectedStep?.stepIndex ?? 0}
       />
     </div>
