@@ -42,6 +42,11 @@ export async function POST(
     const content = (body?.content as string | undefined)?.trim() ?? "";
     const stepIndex =
       typeof body?.stepIndex === "number" ? body.stepIndex : undefined;
+    const maxResponseCharsRaw = body?.maxResponseChars;
+    const maxResponseChars =
+      typeof maxResponseCharsRaw === "number" && Number.isFinite(maxResponseCharsRaw)
+        ? Math.min(Math.max(Math.floor(maxResponseCharsRaw), 100), 2000)
+        : undefined;
 
     if (!chatId || content.length === 0) {
       return NextResponse.json(
@@ -134,9 +139,22 @@ ${content}
 - ステップ外の質問であっても、ドキュメント知識を活かして有用な助言を行う。
 - 不明点があれば、その旨とユーザーが確認すべき事項を提案する。
 `;
+    if (maxResponseChars) {
+      prompt += `
+追加制約（厳守）:
+- 回答は全体で${maxResponseChars}文字以内に収め、文を途中で切らず完結した文章にする。
+- 構成: 1) 40文字以内の概要文を一文。2) ハイフンで始める箇条書きで最大3項目（各80文字以内）に要点と注意点を整理。3) 40文字以内の締めコメント。
+- 不要な装飾や冗長表現を避け、重要な情報を優先して要約する。
+- 文字数が不足する場合は、優先度の低い情報を削りつつ意味が伝わるように調整する。
+`;
+    }
 
     const completion = await model.generateContent(prompt);
-    const aiText = completion.response?.text() ?? "申し訳ありません。回答を生成できませんでした。";
+    let aiText = completion.response?.text() ?? "申し訳ありません。回答を生成できませんでした。";
+
+    if (maxResponseChars && aiText.length > maxResponseChars) {
+      aiText = `${aiText.slice(0, maxResponseChars - 1)}…`;
+    }
 
     const aiMessage = await prisma.message.create({
       data: {

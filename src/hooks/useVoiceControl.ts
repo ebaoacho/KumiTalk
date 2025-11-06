@@ -46,6 +46,25 @@ const RESERVED_COMMANDS = {
     "しゃべらないで", "止まって", "ストップ", "停止",
     "やめて", "静かに", "黙って", "ミュート", "とめて"
   ] as string[],
+  STOP_VOICE_MODE: [
+    "音声モードやめて",
+    "音声モードをやめて",
+    "音声モード停止",
+    "音声モード止めて",
+    "音声モード終わり",
+    "音声入力やめて",
+    "音声入力停止",
+    "音声停止",
+    "音声を停止",
+    "マイク切って",
+    "マイクを切って",
+    "マイク止めて",
+    "マイク停止",
+    "ボイスモードやめて",
+    "ボイスモード停止",
+    "ボイス停止",
+    "ボイスをやめて",
+  ] as string[],
 };
 
 export type VoiceCommand =
@@ -58,6 +77,7 @@ export type VoiceCommand =
   | { type: "zoomIn" }
   | { type: "zoomOut" }
   | { type: "stopSpeaking" }
+  | { type: "stopVoiceMode" }
   | { type: "chat"; text: string };
 
 interface UseVoiceControlOptions {
@@ -269,6 +289,14 @@ export function useVoiceControl({
     // 1. 音声制御コマンドは最優先（緊急性が高い）
     if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.STOP_SPEAKING) > 0.6) {
       return { type: "stopSpeaking" };
+    }
+    if (
+      calculateMatchScore(normalizedText, RESERVED_COMMANDS.STOP_VOICE_MODE) > 0.5 ||
+      /(音声|ボイス)(モード|入力)?(を)?(全部|全て|全)?(止める|止めて|止めよう|停めて|停止|終了|終わり|やめる|やめて|終わって)/u.test(
+        normalizedText.replace(/\s+/g, "")
+      )
+    ) {
+      return { type: "stopVoiceMode" };
     }
 
     // 2. ステップ番号の抽出（数字指定は優先度高）

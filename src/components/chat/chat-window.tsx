@@ -341,7 +341,11 @@ export function ChatWindow({
   const filteredMessages = useMemo(() => messages, [messages]);
 
   const handleSend = useCallback(
-    async (chatId?: string, overrideContent?: string): Promise<Message | null> => {
+    async (
+      chatId?: string,
+      overrideContent?: string,
+      options?: { maxResponseChars?: number }
+    ): Promise<Message | null> => {
       const source = overrideContent ?? inputMessage;
       const content = source.trim();
       if (!content) return null;
@@ -371,6 +375,7 @@ export function ChatWindow({
           body: JSON.stringify({
             content,
             stepIndex: typeof stepFilter === "number" ? stepFilter : null,
+            maxResponseChars: options?.maxResponseChars,
           }),
         });
 
@@ -412,6 +417,24 @@ export function ChatWindow({
     voiceCommandHandlerRef.current = (command: VoiceCommand) => {
       if (command.type === "stopSpeaking") {
         stopSpeaking();
+        return;
+      }
+
+      if (command.type === "stopVoiceMode") {
+        voiceActivatedRef.current = false;
+        if (voiceResumeTimerRef.current) {
+          clearTimeout(voiceResumeTimerRef.current);
+          voiceResumeTimerRef.current = null;
+        }
+        setIsVoiceProcessing(false);
+        stopSpeaking();
+        stopListening();
+        speak("音声モードを終了しました。");
+        setVoiceFeedback({
+          type: 'info',
+          message: '音声モードを終了しました',
+          timestamp: new Date(),
+        });
         return;
       }
 
@@ -580,10 +603,27 @@ export function ChatWindow({
           });
           return;
         }
+        if (voiceContent.length > 500) {
+          speak("音声での質問は500文字以内にしてください。もう一度短く要約して話してください。", {
+            onEnd: () => {
+              if (voiceActivatedRef.current && !isListening) {
+                startListening();
+              }
+            },
+          });
+          setVoiceFeedback({
+            type: 'error',
+            message: '音声での質問は500文字以内にしてください',
+            timestamp: new Date(),
+          });
+          return;
+        }
         void (async () => {
           setIsVoiceProcessing(true);
           try {
-            const aiMessage = await handleSend(selectedChatId, voiceContent);
+            const aiMessage = await handleSend(selectedChatId, voiceContent, {
+              maxResponseChars: 500,
+            });
             if (aiMessage) {
               const spokenText = sanitizeMarkdownForSpeech(aiMessage.content) || "回答を読み上げできませんでした。";
               speak(spokenText, {
@@ -625,6 +665,7 @@ export function ChatWindow({
     speak,
     startListening,
     stepIndexes,
+    stopListening,
     stopSpeaking,
   ]);
 
