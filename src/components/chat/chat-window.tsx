@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AssemblyStep, Chat, Message } from "./chat-interface";
 import { ShowImageDialog } from "../dialog/show-image-dialog";
+import { ShowVideoDialog } from "@/components/dialog/show-video-dialog";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
 import MarkdownRenderer from "./markdown-renderer";
 import { VoiceMicButton } from "@/components/voice/VoiceMicButton";
@@ -21,6 +22,7 @@ interface ChatWindowProps {
   onBack?: () => void;
   assemblySteps?: AssemblyStep[];
   isProcessingAssembly?: boolean;
+  onStepVideoUpdate?: (stepIndex: number, videoBase64: string) => void;
 }
 
 type StepFilter = "all" | number;
@@ -44,6 +46,7 @@ export function ChatWindow({
   onBack,
   assemblySteps = [],
   isProcessingAssembly = false,
+  onStepVideoUpdate,
 }: ChatWindowProps) {
   const { fetchWithProgress } = useProgress();
 
@@ -53,8 +56,10 @@ export function ChatWindow({
   const [isLoading, setIsLoading] = useState(false);
   const [stepFilter, setStepFilter] = useState<StepFilter>("all");
   const [showImageDialog, setShowImageDialog] = useState(false);
+  const [showVideoDialog, setShowVideoDialog] = useState(false);
+  const [videoDialogSource, setVideoDialogSource] = useState<string | null>(null);
   const [voiceFeedback, setVoiceFeedback] = useState<{
-    type: 'success' | 'error' | 'info' | 'help';
+    type: 'success' | 'error' | 'info';
     message: string;
     timestamp: Date;
   } | null>(null);
@@ -74,7 +79,7 @@ export function ChatWindow({
     speak,
     stopSpeaking,
     startListening,
-    toggleListening,
+    stopListening,
   } = useVoiceControl({
     onCommand: (command) => voiceCommandHandlerRef.current(command),
     onError: (error) => voiceErrorHandlerRef.current(error),
@@ -82,13 +87,154 @@ export function ChatWindow({
   });
 
   const voiceActivatedRef = useRef(false);
-  const prevSpokenFilterRef = useRef<StepFilter | null>(null);
+  const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
+  const voiceResumeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [videoOverrides, setVideoOverrides] = useState<Record<number, string>>({});
+  const [videoStatus, setVideoStatus] = useState<
+    Record<number, { isGenerating: boolean; error: string | null }>
+  >({});
+
+  const isRecognizedVoiceQuestion = useCallback((content: string) => {
+    const trimmed = content.trim();
+    if (trimmed.length < 5) {
+      return false;
+    }
+
+    const collapsed = trimmed.replace(/\s+/g, "");
+    if (collapsed.length < 3) {
+      return false;
+    }
+
+    if (!/[一-龠ぁ-んァ-ンa-zA-Z0-9]/u.test(collapsed)) {
+      return false;
+    }
+
+    const uniqueChars = new Set(collapsed);
+    if (uniqueChars.size <= 1) {
+      return false;
+    }
+
+    const hasQuestionMark = /[?？]/.test(trimmed);
+    const hasQuestionEnding = /(か|かな|かい|かしら)([?？]*)$/u.test(trimmed);
+    const questionKeywords = [
+      "教えて",
+      "どう",
+      "どこ",
+      "どれ",
+      "どの",
+      "なぜ",
+      "なに",
+      "何",
+      "理由",
+      "方法",
+      "確認",
+      "説明",
+      "できない",
+      "できる",
+      "使い方",
+      "わからない",
+      "help",
+      "why",
+      "how",
+      "what",
+      "where",
+      "when",
+      "which",
+      "explain",
+      "step",
+      "ステップ",
+    ];
+    const hasKeyword = questionKeywords.some((keyword) => trimmed.includes(keyword));
+
+    return hasKeyword || hasQuestionMark || hasQuestionEnding;
+  }, []);
+
+  useEffect(() => {
+    const initialOverrides: Record<number, string> = {};
+    for (const step of assemblySteps) {
+      if (step.videoBase64) {
+        initialOverrides[step.stepIndex] = step.videoBase64;
+      }
+    }
+    setVideoOverrides(initialOverrides);
+    setVideoStatus((prev) => {
+      const next: Record<number, { isGenerating: boolean; error: string | null }> = {};
+      for (const step of assemblySteps) {
+        if (prev[step.stepIndex]) {
+          next[step.stepIndex] = prev[step.stepIndex];
+        }
+      }
+      return next;
+    });
+  }, [assemblySteps]);
+
+  const sanitizeMarkdownForSpeech = useCallback((text: string) => {
+    let processed = text;
+    processed = processed.replace(/```[\s\S]*?```/g, ""); // Remove code blocks entirely
+    processed = processed.replace(/`([^`]+)`/g, "$1"); // Inline code
+    processed = processed.replace(/!\[([^\]]*)\]\([^\)]+\)/g, "$1"); // Images
+    processed = processed.replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1"); // Links
+    processed = processed.replace(/[*_~]+/g, ""); // Emphasis markers
+    processed = processed.replace(/^>\s?/gm, ""); // Blockquotes
+    processed = processed.replace(/^[-+*]\s+/gm, ""); // Bullet markers
+    processed = processed.replace(/#+\s*/g, ""); // Headings
+    processed = processed.replace(/[:：]/g, "、"); // Colons to pause
+    processed = processed.replace(/\r?\n\r?\n/g, "。"); // Paragraph breaks
+    processed = processed.replace(/\r?\n/g, "、"); // Line breaks
+    processed = processed.replace(/\s{2,}/g, " "); // Extra spaces
+    return processed.trim();
+  }, []);
+
+  const resumeListeningIfNeeded = useCallback(() => {
+    if (voiceActivatedRef.current && !isListening) {
+      startListening();
+    }
+  }, [isListening, startListening]);
+
+  const speakWithAutoResume = useCallback(
+    (text: string) => {
+      speak(text, {
+        onEnd: () => {
+          resumeListeningIfNeeded();
+        },
+      });
+    },
+    [resumeListeningIfNeeded, speak]
+  );
 
   useEffect(() => {
     voiceErrorHandlerRef.current = (error) => {
       console.error("音声コントロールエラー:", error);
     };
   }, []);
+
+  useEffect(() => {
+    if (voiceResumeTimerRef.current) {
+      clearTimeout(voiceResumeTimerRef.current);
+      voiceResumeTimerRef.current = null;
+    }
+
+    if (!voiceActivatedRef.current) {
+      return;
+    }
+
+    if (isVoiceProcessing || isSpeaking || isListening) {
+      return;
+    }
+
+    voiceResumeTimerRef.current = setTimeout(() => {
+      if (voiceActivatedRef.current && !isVoiceProcessing && !isSpeaking && !isListening) {
+        startListening();
+      }
+    }, 400);
+
+    return () => {
+      if (voiceResumeTimerRef.current) {
+        clearTimeout(voiceResumeTimerRef.current);
+        voiceResumeTimerRef.current = null;
+      }
+    };
+  }, [isListening, isSpeaking, isVoiceProcessing, startListening]);
 
   useEffect(() => {
     setStepFilter("all");
@@ -155,6 +301,20 @@ export function ChatWindow({
       ? assemblySteps.find((step) => step.stepIndex === stepFilter) ?? null
       : null;
 
+  useEffect(() => {
+    setShowVideoDialog(false);
+    setVideoDialogSource(null);
+  }, [selectedStep?.stepIndex]);
+
+  const currentVideoBase64 = useMemo(() => {
+    if (!selectedStep) return undefined;
+    const override = videoOverrides[selectedStep.stepIndex];
+    return override ?? selectedStep.videoBase64 ?? undefined;
+  }, [selectedStep, videoOverrides]);
+  const currentVideoState = selectedStep
+    ? videoStatus[selectedStep.stepIndex]
+    : undefined;
+
   // ステップの並び（インデックス順に揃える）
   const stepIndexes = useMemo(
     () => [...assemblySteps.map((s) => s.stepIndex)].sort((a, b) => a - b),
@@ -206,61 +366,45 @@ export function ChatWindow({
     return () => window.removeEventListener("keydown", onKey);
   }, [goNext, goPrev, stepFilter]);
 
-  const announceCurrentSelection = useCallback(() => {
-    if (assemblySteps.length === 0) {
-      speak("まだステップが読み込まれていません。");
-      return;
-    }
-
-    if (stepFilter === "all") {
-      const summary = chatMeta?.title
-        ? `${chatMeta.title}の全ステップ一覧です。${assemblySteps.length}件のステップがあります。`
-        : `全ステップ一覧です。${assemblySteps.length}件のステップがあります。`;
-      speak(summary);
-      return;
-    }
-
-    if (typeof stepFilter === "number") {
-      const step = assemblySteps.find((s) => s.stepIndex === stepFilter);
-      if (step) {
-        speak(`ステップ${step.stepIndex}です。${step.description}`);
-      }
-    }
-  }, [assemblySteps, chatMeta?.title, speak, stepFilter]);
-
-  // ステップ変更時に自動的に音声出力（マイクボタン不要）
-  useEffect(() => {
-    if (prevSpokenFilterRef.current === stepFilter) return;
-    if (assemblySteps.length === 0) return;
-
-    prevSpokenFilterRef.current = stepFilter;
-    announceCurrentSelection();
-  }, [announceCurrentSelection, stepFilter, assemblySteps.length]);
-
   const handleToggleListening = useCallback(() => {
-    if (!voiceActivatedRef.current) {
-      voiceActivatedRef.current = true;
+    if (isVoiceProcessing) {
+      return;
     }
 
-    // 音声出力中の場合は、まず音声を停止してから入力を開始
+    // 音声出力を強制停止してすぐに聞き直す
     if (isSpeaking) {
+      if (!voiceActivatedRef.current) {
+        voiceActivatedRef.current = true;
+      }
       stopSpeaking();
-      // 少し待ってから音声入力を開始
       setTimeout(() => {
-        if (!isListening) {
+        if (voiceActivatedRef.current && !isListening) {
           startListening();
         }
-      }, 100);
+      }, 120);
       return;
     }
 
-    toggleListening();
-  }, [isListening, isSpeaking, startListening, stopSpeaking, toggleListening]);
+    if (voiceActivatedRef.current) {
+      voiceActivatedRef.current = false;
+      stopListening();
+      return;
+    }
+
+    voiceActivatedRef.current = true;
+    if (!isListening) {
+      startListening();
+    }
+  }, [isListening, isSpeaking, isVoiceProcessing, startListening, stopListening, stopSpeaking]);
 
   const filteredMessages = useMemo(() => messages, [messages]);
 
   const handleSend = useCallback(
-    async (chatId?: string, overrideContent?: string): Promise<Message | null> => {
+    async (
+      chatId?: string,
+      overrideContent?: string,
+      options?: { maxResponseChars?: number }
+    ): Promise<Message | null> => {
       const source = overrideContent ?? inputMessage;
       const content = source.trim();
       if (!content) return null;
@@ -290,6 +434,7 @@ export function ChatWindow({
           body: JSON.stringify({
             content,
             stepIndex: typeof stepFilter === "number" ? stepFilter : null,
+            maxResponseChars: options?.maxResponseChars,
           }),
         });
 
@@ -327,6 +472,141 @@ export function ChatWindow({
     void handleSend(selectedChatId);
   };
 
+  const handleOpenVideoDialog = useCallback(
+    (videoBase64?: string) => {
+      if (!videoBase64) return;
+      setVideoDialogSource(videoBase64);
+      setShowVideoDialog(true);
+    },
+    []
+  );
+
+  const generateVideoForCurrentStep = useCallback(
+    async (options?: {
+      openDialog?: boolean;
+      source?: "voice" | "ui";
+      allowIfExists?: boolean;
+    }) => {
+      if (!selectedChatId || !selectedStep) {
+        if (options?.source === "voice") {
+          speakWithAutoResume("ステップが選択されていないため、動画を生成できません。");
+        }
+        return;
+      }
+
+      const stepIndex = selectedStep.stepIndex;
+      const existingVideo =
+        videoOverrides[stepIndex] ?? selectedStep.videoBase64 ?? undefined;
+
+      if (existingVideo && !options?.allowIfExists) {
+        if (options?.source === "voice") {
+          speakWithAutoResume(
+            "このステップの動画は既に生成済みです。動画を表示と言ってください。"
+          );
+        }
+        return;
+      }
+
+      const currentState = videoStatus[stepIndex];
+      if (currentState?.isGenerating) {
+        if (options?.source === "voice") {
+          speakWithAutoResume("このステップの動画は現在生成中です。完了までお待ちください。");
+        }
+        return;
+      }
+
+      setVideoStatus((prev) => ({
+        ...prev,
+        [stepIndex]: { isGenerating: true, error: null },
+      }));
+      setVoiceFeedback({
+        type: "info",
+        message: `ステップ${stepIndex}の動画を生成中`,
+        timestamp: new Date(),
+      });
+
+      if (options?.source === "voice") {
+        speakWithAutoResume("動画の生成を開始します。完了まで数分かかります。");
+      }
+
+      try {
+        const response = await fetchWithProgress("/api/generate-video", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            chatId: selectedChatId,
+            stepIndex,
+          }),
+        });
+
+        const payload = (await response
+          .json()
+          .catch(() => ({}))) as { videoBase64?: string; error?: string };
+
+        const { videoBase64 } = payload;
+
+        if (!response.ok || typeof videoBase64 !== "string" || videoBase64.length === 0) {
+          throw new Error(
+            payload.error ??
+              `動画生成に失敗しました（status ${response.status}）`
+          );
+        }
+
+        setVideoOverrides((prev) => ({
+          ...prev,
+          [stepIndex]: videoBase64,
+        }));
+        onStepVideoUpdate?.(stepIndex, videoBase64);
+        setVideoStatus((prev) => ({
+          ...prev,
+          [stepIndex]: { isGenerating: false, error: null },
+        }));
+        setVoiceFeedback({
+          type: "success",
+          message: `ステップ${stepIndex}の動画を生成しました`,
+          timestamp: new Date(),
+        });
+
+        if (options?.openDialog) {
+          handleOpenVideoDialog(videoBase64);
+        }
+
+        if (options?.source === "voice") {
+          speakWithAutoResume("動画の生成が完了しました。");
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "動画の生成に失敗しました。";
+        setVideoStatus((prev) => ({
+          ...prev,
+          [stepIndex]: { isGenerating: false, error: message },
+        }));
+        setVoiceFeedback({
+          type: "error",
+          message,
+          timestamp: new Date(),
+        });
+        if (options?.source === "voice") {
+          speakWithAutoResume(`動画生成に失敗しました。${message}`);
+        }
+      }
+    },
+    [
+      fetchWithProgress,
+      handleOpenVideoDialog,
+      onStepVideoUpdate,
+      selectedChatId,
+      selectedStep,
+      speakWithAutoResume,
+      videoOverrides,
+      videoStatus,
+    ]
+  );
+
   useEffect(() => {
     voiceCommandHandlerRef.current = (command: VoiceCommand) => {
       if (command.type === "stopSpeaking") {
@@ -334,20 +614,20 @@ export function ChatWindow({
         return;
       }
 
-      // ヘルプコマンドの処理
-      if (command.type === "help") {
-        const helpMessage = `
-          音声コマンドをご利用いただけます。
-          ナビゲーション：「次」で次のステップ、「戻って」で前のステップ、「ステップ3」で指定ステップに移動。
-          表示操作：「拡大」で画像拡大、「縮小」で拡大表示を閉じる。
-          その他：「全て」で全ステップ表示、「止まって」で音声停止。
-          何か質問があれば、そのまま話しかけてください。
-        `;
-        speak(helpMessage.replace(/\s+/g, ' ').trim());
+      if (command.type === "stopVoiceMode") {
+        voiceActivatedRef.current = false;
+        if (voiceResumeTimerRef.current) {
+          clearTimeout(voiceResumeTimerRef.current);
+          voiceResumeTimerRef.current = null;
+        }
+        setIsVoiceProcessing(false);
+        stopSpeaking();
+        stopListening();
+        speak("音声モードを終了しました。");
         setVoiceFeedback({
-          type: 'help',
-          message: '音声コマンドのヘルプを表示しました',
-          timestamp: new Date()
+          type: 'info',
+          message: '音声モードを終了しました',
+          timestamp: new Date(),
         });
         return;
       }
@@ -355,7 +635,56 @@ export function ChatWindow({
       voiceActivatedRef.current = true;
 
       if (!selectedChatId) {
-        speak("チャットが選択されていません。");
+        speakWithAutoResume("チャットが選択されていません。");
+        return;
+      }
+
+      if (command.type === "videoGenerate") {
+        void generateVideoForCurrentStep({ source: "voice" });
+        return;
+      }
+
+      if (command.type === "videoShow") {
+        if (!selectedStep) {
+          speakWithAutoResume("ステップが選択されていません。");
+          return;
+        }
+        if (showVideoDialog) {
+          speakWithAutoResume("動画はすでに表示されています。");
+          return;
+        }
+        if (currentVideoState?.isGenerating) {
+          speakWithAutoResume("動画は現在生成中です。完了までお待ちください。");
+          return;
+        }
+        if (currentVideoBase64) {
+          handleOpenVideoDialog(currentVideoBase64);
+          speakWithAutoResume(`ステップ${selectedStep.stepIndex}の動画を表示します。`);
+          setVoiceFeedback({
+            type: 'info',
+            message: `ステップ${selectedStep.stepIndex}の動画を表示`,
+            timestamp: new Date(),
+          });
+        } else {
+          speakWithAutoResume("このステップの動画はまだ生成されていません。生成を開始します。");
+          void generateVideoForCurrentStep({ source: "voice", openDialog: true });
+        }
+        return;
+      }
+
+      if (command.type === "videoHide") {
+        if (showVideoDialog) {
+          setShowVideoDialog(false);
+          setVideoDialogSource(null);
+          speakWithAutoResume("動画の表示を閉じました。");
+          setVoiceFeedback({
+            type: 'info',
+            message: '動画の表示を閉じました',
+            timestamp: new Date(),
+          });
+        } else {
+          speakWithAutoResume("現在動画は表示されていません。");
+        }
         return;
       }
 
@@ -363,7 +692,7 @@ export function ChatWindow({
         const target = assemblySteps.find((step) => step.stepIndex === command.stepNumber);
         if (target) {
           setStepFilter(command.stepNumber);
-          speak(`ステップ${command.stepNumber}に移動しました。${target.title}`);
+          speakWithAutoResume(`ステップ${command.stepNumber}に移動しました。${target.title}`);
           setVoiceFeedback({
             type: 'success',
             message: `ステップ${command.stepNumber}に移動`,
@@ -371,7 +700,7 @@ export function ChatWindow({
           });
         } else {
           const maxStep = assemblySteps.length > 0 ? Math.max(...assemblySteps.map(s => s.stepIndex)) : 0;
-          speak(`ステップ${command.stepNumber}は存在しません。利用可能なステップは1から${maxStep}です。`);
+          speakWithAutoResume(`ステップ${command.stepNumber}は存在しません。利用可能なステップは1から${maxStep}です。`);
           setVoiceFeedback({
             type: 'error',
             message: `ステップ${command.stepNumber}は存在しません`,
@@ -383,28 +712,28 @@ export function ChatWindow({
 
       if (command.type === "next") {
         if (stepIndexes.length === 0) {
-          speak("ステップが登録されていません。");
+          speakWithAutoResume("ステップが登録されていません。");
           return;
         }
         if (currentIdx === -1) {
           const firstStep = stepIndexes[0];
           setStepFilter(firstStep);
           const target = assemblySteps.find(step => step.stepIndex === firstStep);
-          speak(`ステップ${firstStep}に移動しました。${target?.title || ''}`);
+          speakWithAutoResume(`ステップ${firstStep}に移動しました。${target?.title || ''}`);
           return;
         }
         if (currentIdx < stepIndexes.length - 1) {
           const nextStep = stepIndexes[currentIdx + 1];
           setStepFilter(nextStep);
           const target = assemblySteps.find(step => step.stepIndex === nextStep);
-          speak(`ステップ${nextStep}に移動しました。${target?.title || ''}`);
+          speakWithAutoResume(`ステップ${nextStep}に移動しました。${target?.title || ''}`);
           setVoiceFeedback({
             type: 'success',
             message: `次のステップ${nextStep}に移動`,
             timestamp: new Date()
           });
         } else {
-          speak("これが最後のステップです。");
+          speakWithAutoResume("これが最後のステップです。");
           setVoiceFeedback({
             type: 'info',
             message: '最後のステップです',
@@ -416,65 +745,65 @@ export function ChatWindow({
 
       if (command.type === "prev") {
         if (stepIndexes.length === 0) {
-          speak("ステップが登録されていません。");
+          speakWithAutoResume("ステップが登録されていません。");
           return;
         }
         if (currentIdx === -1) {
           const lastStep = stepIndexes[stepIndexes.length - 1];
           setStepFilter(lastStep);
           const target = assemblySteps.find(step => step.stepIndex === lastStep);
-          speak(`ステップ${lastStep}に移動しました。${target?.title || ''}`);
+          speakWithAutoResume(`ステップ${lastStep}に移動しました。${target?.title || ''}`);
           return;
         }
         if (currentIdx > 0) {
           const prevStep = stepIndexes[currentIdx - 1];
           setStepFilter(prevStep);
           const target = assemblySteps.find(step => step.stepIndex === prevStep);
-          speak(`ステップ${prevStep}に移動しました。${target?.title || ''}`);
+          speakWithAutoResume(`ステップ${prevStep}に移動しました。${target?.title || ''}`);
         } else {
-          speak("これが最初のステップです。");
+          speakWithAutoResume("これが最初のステップです。");
         }
         return;
       }
 
       if (command.type === "first") {
         if (stepIndexes.length === 0) {
-          speak("ステップが登録されていません。");
+          speakWithAutoResume("ステップが登録されていません。");
           return;
         }
         const firstStep = stepIndexes[0];
         setStepFilter(firstStep);
         const target = assemblySteps.find(step => step.stepIndex === firstStep);
-        speak(`最初のステップ${firstStep}に移動しました。${target?.title || ''}`);
+        speakWithAutoResume(`最初のステップ${firstStep}に移動しました。${target?.title || ''}`);
         return;
       }
 
       if (command.type === "last") {
         if (stepIndexes.length === 0) {
-          speak("ステップが登録されていません。");
+          speakWithAutoResume("ステップが登録されていません。");
           return;
         }
         const lastStep = stepIndexes[stepIndexes.length - 1];
         setStepFilter(lastStep);
         const target = assemblySteps.find(step => step.stepIndex === lastStep);
-        speak(`最後のステップ${lastStep}に移動しました。${target?.title || ''}`);
+        speakWithAutoResume(`最後のステップ${lastStep}に移動しました。${target?.title || ''}`);
         return;
       }
 
       if (command.type === "all") {
         setStepFilter("all");
-        speak(`全${assemblySteps.length}ステップを表示しています。`);
+        speakWithAutoResume(`全${assemblySteps.length}ステップを表示しています。`);
         return;
       }
 
       if (command.type === "zoomIn") {
         if (selectedStep?.imageBase64) {
           setShowImageDialog(true);
-          speak(`ステップ${selectedStep.stepIndex}の画像を拡大表示しました。`);
+          speakWithAutoResume(`ステップ${selectedStep.stepIndex}の画像を拡大表示しました。`);
         } else if (stepFilter === "all") {
-          speak("画像を拡大するには、まず特定のステップを選択してください。");
+          speakWithAutoResume("画像を拡大するには、まず特定のステップを選択してください。");
         } else {
-          speak("このステップには拡大できる画像がありません。");
+          speakWithAutoResume("このステップには拡大できる画像がありません。");
         }
         return;
       }
@@ -482,9 +811,9 @@ export function ChatWindow({
       if (command.type === "zoomOut") {
         if (showImageDialog) {
           setShowImageDialog(false);
-          speak("拡大表示を閉じました。");
+          speakWithAutoResume("拡大表示を閉じました。");
         } else {
-          speak("現在画像は拡大表示されていません。");
+          speakWithAutoResume("現在画像は拡大表示されていません。");
         }
         return;
       }
@@ -499,29 +828,67 @@ export function ChatWindow({
                 startListening();
               }
             }
+            });
+          return;
+        }
+        if (!isRecognizedVoiceQuestion(voiceContent)) {
+          speak("質問として認識できませんでした。もう一度はっきりと質問してください。", {
+            onEnd: () => {
+              if (voiceActivatedRef.current && !isListening) {
+                startListening();
+              }
+            },
+          });
+          setVoiceFeedback({
+            type: 'error',
+            message: '音声が質問として認識されませんでした',
+            timestamp: new Date(),
+          });
+          return;
+        }
+        if (voiceContent.length > 500) {
+          speak("音声での質問は500文字以内にしてください。もう一度短く要約して話してください。", {
+            onEnd: () => {
+              if (voiceActivatedRef.current && !isListening) {
+                startListening();
+              }
+            },
+          });
+          setVoiceFeedback({
+            type: 'error',
+            message: '音声での質問は500文字以内にしてください',
+            timestamp: new Date(),
           });
           return;
         }
         void (async () => {
-          const aiMessage = await handleSend(selectedChatId, voiceContent);
-          if (aiMessage) {
-            speak(aiMessage.content, {
-              onEnd: () => {
-                // AI応答の読み上げ終了後、自動的にマイクを再開（対話継続）
-                if (voiceActivatedRef.current && !isListening) {
-                  startListening();
-                }
-              }
+          setIsVoiceProcessing(true);
+          try {
+            const aiMessage = await handleSend(selectedChatId, voiceContent, {
+              maxResponseChars: 500,
             });
-          } else {
-            speak("メッセージの送信に失敗しました。", {
-              onEnd: () => {
-                // エラーメッセージの読み上げ終了後も、マイクを再開
-                if (voiceActivatedRef.current && !isListening) {
-                  startListening();
+            if (aiMessage) {
+              const spokenText = sanitizeMarkdownForSpeech(aiMessage.content) || "回答を読み上げできませんでした。";
+              speak(spokenText, {
+                onEnd: () => {
+                  // AI応答の読み上げ終了後、自動的にマイクを再開（対話継続）
+                  if (voiceActivatedRef.current && !isListening) {
+                    startListening();
+                  }
                 }
-              }
-            });
+              });
+            } else {
+              speak("メッセージの送信に失敗しました。", {
+                onEnd: () => {
+                  // エラーメッセージの読み上げ終了後も、マイクを再開
+                  if (voiceActivatedRef.current && !isListening) {
+                    startListening();
+                  }
+                }
+              });
+            }
+          } finally {
+            setIsVoiceProcessing(false);
           }
         })();
         return;
@@ -532,12 +899,23 @@ export function ChatWindow({
     currentIdx,
     handleSend,
     isListening,
+    isRecognizedVoiceQuestion,
+    isVoiceProcessing,
+    sanitizeMarkdownForSpeech,
     selectedChatId,
     selectedStep,
     showImageDialog,
+    showVideoDialog,
+    currentVideoBase64,
+    currentVideoState,
+    generateVideoForCurrentStep,
+    stepFilter,
+    speakWithAutoResume,
+    handleOpenVideoDialog,
     speak,
     startListening,
     stepIndexes,
+    stopListening,
     stopSpeaking,
   ]);
 
@@ -566,6 +944,7 @@ export function ChatWindow({
             isSpeaking={isSpeaking}
             isSupported={isSupported}
             currentTranscript={currentTranscript}
+            isProcessing={isVoiceProcessing}
             onToggle={handleToggleListening}
           />
         )}
@@ -767,15 +1146,6 @@ export function ChatWindow({
                          画像は生成されませんでした
                        </div>
                      )}
-                     {selectedChatId && (
-                      <div className="mt-4">
-                        <VideoPlayer
-                          chatId={selectedChatId}
-                          stepIndex={selectedStep.stepIndex}
-                          existingVideoBase64={selectedStep.videoBase64}
-                        />
-                      </div>
-                    )}
                    </div>
                    <div className="md:flex-1">
                      <h5 className="mb-2 text-xl font-semibold text-white">{selectedStep.title}</h5>
@@ -798,27 +1168,59 @@ export function ChatWindow({
                          </div>
                        </div>
                      )}
-                     <div className="mt-4 flex flex-wrap gap-2">
-                       <Button
-                         type="button"
-                         className="rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-900 hover:from-cyan-300 hover:to-emerald-300"
-                         onClick={() => setShowImageDialog(true)}
-                       >
-                         画像を拡大表示
-                       </Button>
-                       <Button
-                         variant="outline"
-                         type="button"
-                         className="rounded-full border-white/20 bg-white/10 text-white hover:bg-white/20"
-                         onClick={() => setStepFilter("all")}
-                       >
-                         全ステップを表示
-                       </Button>
-                     </div>
-                   </div>
-                 </div>
-               </article>
-             </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        className="rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-900 hover:from-cyan-300 hover:to-emerald-300"
+                        onClick={() => setShowImageDialog(true)}
+                      >
+                        画像を拡大表示
+                      </Button>
+                      {selectedChatId && (
+                        <VideoPlayer
+                          videoBase64={currentVideoBase64}
+                          isGenerating={Boolean(currentVideoState?.isGenerating)}
+                          error={currentVideoState?.error ?? null}
+                          onGenerate={() => {
+                            void generateVideoForCurrentStep({
+                              source: "ui",
+                              openDialog: true,
+                            });
+                          }}
+                          onShow={() => {
+                            if (currentVideoState?.isGenerating) return;
+                            if (currentVideoBase64) {
+                              handleOpenVideoDialog(currentVideoBase64);
+                            } else {
+                              void generateVideoForCurrentStep({
+                                source: "ui",
+                                openDialog: true,
+                              });
+                            }
+                          }}
+                          onRetry={() => {
+                            void generateVideoForCurrentStep({
+                              source: "ui",
+                              openDialog: true,
+                              allowIfExists: true,
+                            });
+                          }}
+                          className="min-w-[180px]"
+                        />
+                      )}
+                      <Button
+                        variant="outline"
+                        type="button"
+                        onClick={() => setStepFilter("all")}
+                        className="rounded-full border-white/20 bg-white/10 text-white hover:bg-white/20"
+                      >
+                        全ステップ表示
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
            )
           )}
         </section>
@@ -947,6 +1349,17 @@ export function ChatWindow({
         imageBase64={selectedStep?.imageBase64 ?? ""}
         stepIndex={selectedStep?.stepIndex ?? 0}
       />
+      <ShowVideoDialog
+        open={showVideoDialog}
+        onOpenChange={(open) => {
+          setShowVideoDialog(open);
+          if (!open) {
+            setVideoDialogSource(null);
+          }
+        }}
+        videoBase64={videoDialogSource ?? ""}
+        stepIndex={selectedStep?.stepIndex ?? 0}
+      />
     </div>
     {isSupported && (
       <VoiceMicButton
@@ -954,6 +1367,7 @@ export function ChatWindow({
         isSpeaking={isSpeaking}
         isSupported={isSupported}
         currentTranscript={currentTranscript}
+        isProcessing={isVoiceProcessing}
         onToggle={handleToggleListening}
       />
     )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Mic, MicOff } from "lucide-react";
+import { Loader2, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface VoiceMicButtonProps {
@@ -8,6 +8,7 @@ interface VoiceMicButtonProps {
   isSpeaking: boolean;
   isSupported: boolean;
   currentTranscript: string;
+  isProcessing: boolean;
   onToggle: () => void;
 }
 
@@ -16,6 +17,7 @@ export function VoiceMicButton({
   isSpeaking,
   isSupported,
   currentTranscript,
+  isProcessing,
   onToggle,
 }: VoiceMicButtonProps) {
   if (!isSupported) {
@@ -33,7 +35,7 @@ export function VoiceMicButton({
       )}
       
       {/* 状態表示 */}
-      {(isListening || isSpeaking) && (
+      {(isListening || isSpeaking || isProcessing) && (
         <div className="bg-black/80 backdrop-blur-sm rounded-full px-3 py-1 shadow-lg animate-in slide-in-from-bottom-2 duration-300">
           <div className="text-white text-xs font-medium flex items-center gap-2">
             {isSpeaking ? (
@@ -46,6 +48,11 @@ export function VoiceMicButton({
                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
                 音声認識中
               </>
+            ) : isProcessing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                AIが応答を考えています…
+              </>
             ) : null}
           </div>
         </div>
@@ -55,10 +62,12 @@ export function VoiceMicButton({
       <Button
         onClick={onToggle}
         size="lg"
+        disabled={isProcessing}
         className={`
           relative h-16 w-16 rounded-full shadow-lg transition-all duration-300
-          ${
-            isSpeaking
+          ${isProcessing
+            ? "cursor-not-allowed bg-gradient-to-br from-slate-500 to-slate-600 text-white/80"
+            : isSpeaking
               ? "bg-gradient-to-br from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600"
               : isListening
                 ? "bg-gradient-to-br from-blue-500 to-cyan-500 animate-pulse"
@@ -66,12 +75,15 @@ export function VoiceMicButton({
           }
         `}
         aria-label={
-          isSpeaking
-            ? "音声出力を停止して入力を開始する"
-            : isListening
-              ? "音声入力を停止する"
-              : "音声入力を開始する"
+          isProcessing
+            ? "AIが応答を考えています"
+            : isSpeaking
+              ? "音声出力を停止して入力を開始する"
+              : isListening
+                ? "音声入力を停止する"
+                : "音声入力を開始する"
         }
+        aria-disabled={isProcessing}
       >
         {/* 音声レベルインジケーター（音声認識中のみ） */}
         {isListening && (

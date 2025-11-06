@@ -27,6 +27,7 @@ export async function GET(
         title: step.title,
         description: step.description,
         imageBase64: step.imageBase64 ?? undefined,
+        videoBase64: step.videoBase64 ?? undefined,
         parts: step.parts as Array<{
           name: string;
           description?: string;

@@ -46,10 +46,55 @@ const RESERVED_COMMANDS = {
     "しゃべらないで", "止まって", "ストップ", "停止",
     "やめて", "静かに", "黙って", "ミュート", "とめて"
   ] as string[],
-  // ヘルプ機能
-  HELP: [
-    "ヘルプ", "助けて", "使い方", "コマンド一覧", "help",
-    "何ができる", "どうやって使う", "説明", "ガイド"
+  STOP_VOICE_MODE: [
+    "音声モードやめて",
+    "音声モードをやめて",
+    "音声モード停止",
+    "音声モード止めて",
+    "音声モード終わり",
+    "音声入力やめて",
+    "音声入力停止",
+    "音声停止",
+    "音声を停止",
+    "マイク切って",
+    "マイクを切って",
+    "マイク止めて",
+    "マイク停止",
+    "ボイスモードやめて",
+    "ボイスモード停止",
+    "ボイス停止",
+    "ボイスをやめて",
+  ] as string[],
+  VIDEO_GENERATE: [
+    "動画を生成",
+    "動画生成",
+    "動画作って",
+    "動画を作って",
+    "ビデオ生成",
+    "ビデオ作って",
+    "動画作成",
+    "動画作成して",
+  ] as string[],
+  VIDEO_SHOW: [
+    "動画を表示",
+    "動画表示",
+    "動画見せて",
+    "動画を見せて",
+    "動画再生",
+    "動画流して",
+    "ビデオ表示",
+    "ビデオ見せて",
+  ] as string[],
+  VIDEO_HIDE: [
+    "動画閉じて",
+    "動画を閉じて",
+    "動画非表示",
+    "動画を非表示",
+    "動画を止めて",
+    "動画やめて",
+    "動画を消して",
+    "ビデオ閉じて",
+    "ビデオを止めて",
   ] as string[],
 };
 
@@ -63,7 +108,10 @@ export type VoiceCommand =
   | { type: "zoomIn" }
   | { type: "zoomOut" }
   | { type: "stopSpeaking" }
-  | { type: "help"; category?: string }
+  | { type: "stopVoiceMode" }
+  | { type: "videoGenerate" }
+  | { type: "videoShow" }
+  | { type: "videoHide" }
   | { type: "chat"; text: string };
 
 interface UseVoiceControlOptions {
@@ -87,7 +135,6 @@ export function useVoiceControl({
   const isMountedRef = useRef(false);
   const onCommandRef = useRef(onCommand);
   const onErrorRef = useRef(onError);
-  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastTranscriptRef = useRef<string>("");
 
   useEffect(() => {
@@ -128,12 +175,6 @@ export function useVoiceControl({
     recognition.onresult = (event) => {
       if (!isMountedRef.current) return;
 
-      // 既存のタイマーをクリア
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
-
       // 最新の結果を取得
       const result = event.results[event.results.length - 1];
       const transcript = result[0]?.transcript ?? "";
@@ -146,21 +187,12 @@ export function useVoiceControl({
       if (result.isFinal) {
         console.log("確定した音声認識結果:", transcript);
         const command = parseAndValidateCommand(transcript);
-        onCommandRef.current?.(command);
+        if (command) {
+          onCommandRef.current?.(command);
+        }
         lastTranscriptRef.current = "";
         setCurrentTranscript(""); // 確定時に中間結果をクリア
 
-        // 5秒間の無音タイマーを開始
-        silenceTimerRef.current = setTimeout(() => {
-          if (isMountedRef.current && recognitionRef.current) {
-            console.log("5秒間無音のため、音声認識を停止します");
-            try {
-              recognitionRef.current.stop();
-            } catch (error) {
-              console.error("音声認識停止エラー:", error);
-            }
-          }
-        }, 5000);
       } else {
         // 中間結果（話している途中）
         console.log("中間結果:", transcript);
@@ -203,12 +235,6 @@ export function useVoiceControl({
       if (!isMountedRef.current) return;
       console.log("音声認識終了");
 
-      // タイマーをクリア
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
-
       setIsListening(false);
       setCurrentTranscript(""); // 認識終了時に中間結果をクリア
     };
@@ -217,12 +243,6 @@ export function useVoiceControl({
 
     return () => {
       isMountedRef.current = false;
-
-      // タイマーをクリア
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
 
       recognition.stop();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -304,19 +324,32 @@ export function useVoiceControl({
     if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.STOP_SPEAKING) > 0.6) {
       return { type: "stopSpeaking" };
     }
-
-    // 2. ヘルプコマンドの確認
-    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.HELP) > 0.6) {
-      return { type: "help" };
+    if (
+      calculateMatchScore(normalizedText, RESERVED_COMMANDS.STOP_VOICE_MODE) > 0.5 ||
+      /(音声|ボイス)(モード|入力)?(を)?(全部|全て|全)?(止める|止めて|止めよう|停めて|停止|終了|終わり|やめる|やめて|終わって)/u.test(
+        normalizedText.replace(/\s+/g, "")
+      )
+    ) {
+      return { type: "stopVoiceMode" };
     }
 
-    // 3. ステップ番号の抽出（数字指定は優先度高）
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.VIDEO_GENERATE) > 0.6) {
+      return { type: "videoGenerate" };
+    }
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.VIDEO_SHOW) > 0.6) {
+      return { type: "videoShow" };
+    }
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.VIDEO_HIDE) > 0.6) {
+      return { type: "videoHide" };
+    }
+
+    // 2. ステップ番号の抽出（数字指定は優先度高）
     const stepNumber = extractStepNumber(normalizedText);
     if (stepNumber !== null) {
       return { type: "step", stepNumber };
     }
 
-    // 4. ナビゲーションコマンド（優先度順に確認）
+    // 3. ナビゲーションコマンド（優先度順に確認）
     if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.NEXT_STEP) > 0.6) {
       return { type: "next" };
     }
@@ -333,7 +366,7 @@ export function useVoiceControl({
       return { type: "all" };
     }
 
-    // 5. 画像操作コマンド
+    // 4. 画像操作コマンド
     if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.ZOOM_IN) > 0.6) {
       return { type: "zoomIn" };
     }
@@ -341,7 +374,7 @@ export function useVoiceControl({
       return { type: "zoomOut" };
     }
 
-    // 6. 該当しない場合はチャットとして処理
+    // 5. 該当しない場合はチャットとして処理
     return { type: "chat", text: normalizedText };
   }, [normalizeText, extractStepNumber, calculateMatchScore]);
 
@@ -358,15 +391,15 @@ export function useVoiceControl({
         break;
       case "chat":
         if (!command.text || command.text.trim().length === 0) {
-          return { 
-            isValid: false, 
-            errorMessage: "メッセージが空です。" 
+          return {
+            isValid: false,
+            errorMessage: "メッセージが空です。",
           };
         }
         if (command.text.length > 500) {
-          return { 
-            isValid: false, 
-            errorMessage: "メッセージが長すぎます。500文字以内で入力してください。" 
+          return {
+            isValid: false,
+            errorMessage: "メッセージが長すぎます。500文字以内で入力してください。",
           };
         }
         break;
@@ -375,15 +408,14 @@ export function useVoiceControl({
   }, []);
 
   // 強化されたコマンド解析関数（検証付き）
-  const parseAndValidateCommand = useCallback((text: string): VoiceCommand => {
+  const parseAndValidateCommand = useCallback((text: string): VoiceCommand | null => {
     const command = parseVoiceCommand(text);
     const validation = validateCommand(command);
     
     if (!validation.isValid) {
       console.warn('コマンド検証エラー:', validation.errorMessage);
       onErrorRef.current?.(validation.errorMessage || 'コマンドが無効です');
-      // エラーの場合はヘルプを提案
-      return { type: "help" };
+      return null;
     }
     
     return command;
@@ -406,12 +438,6 @@ export function useVoiceControl({
   const stopListening = useCallback(() => {
     const recognition = recognitionRef.current;
     if (!recognition) return;
-
-    // タイマーをクリア
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
 
     try {
       recognition.stop();
