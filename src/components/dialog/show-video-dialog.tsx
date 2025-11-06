@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,22 @@ export function ShowVideoDialog({
   videoBase64,
   stepIndex,
 }: Props) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (!open || !videoBase64) return;
+    const node = videoRef.current;
+    if (!node) return;
+
+    node.currentTime = 0;
+    const playPromise = node.play();
+    if (playPromise && typeof playPromise.then === "function") {
+      playPromise.catch((error) => {
+        console.warn("Failed to autoplay video:", error);
+      });
+    }
+  }, [open, videoBase64]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-full max-w-[90vw] sm:max-w-[85vw] md:max-w-[80vw] lg:max-w-[75vw] xl:max-w-[70vw]">
@@ -26,8 +43,11 @@ export function ShowVideoDialog({
         {videoBase64 ? (
           <div className="overflow-hidden rounded-lg border border-white/10 bg-black">
             <video
+              ref={videoRef}
               src={videoBase64}
               controls
+              autoPlay
+              playsInline
               className="h-auto w-full max-h-[78vh]"
               preload="metadata"
             >
