@@ -65,6 +65,37 @@ const RESERVED_COMMANDS = {
     "ボイス停止",
     "ボイスをやめて",
   ] as string[],
+  VIDEO_GENERATE: [
+    "動画を生成",
+    "動画生成",
+    "動画作って",
+    "動画を作って",
+    "ビデオ生成",
+    "ビデオ作って",
+    "動画作成",
+    "動画作成して",
+  ] as string[],
+  VIDEO_SHOW: [
+    "動画を表示",
+    "動画表示",
+    "動画見せて",
+    "動画を見せて",
+    "動画再生",
+    "動画流して",
+    "ビデオ表示",
+    "ビデオ見せて",
+  ] as string[],
+  VIDEO_HIDE: [
+    "動画閉じて",
+    "動画を閉じて",
+    "動画非表示",
+    "動画を非表示",
+    "動画を止めて",
+    "動画やめて",
+    "動画を消して",
+    "ビデオ閉じて",
+    "ビデオを止めて",
+  ] as string[],
 };
 
 export type VoiceCommand =
@@ -78,6 +109,9 @@ export type VoiceCommand =
   | { type: "zoomOut" }
   | { type: "stopSpeaking" }
   | { type: "stopVoiceMode" }
+  | { type: "videoGenerate" }
+  | { type: "videoShow" }
+  | { type: "videoHide" }
   | { type: "chat"; text: string };
 
 interface UseVoiceControlOptions {
@@ -297,6 +331,16 @@ export function useVoiceControl({
       )
     ) {
       return { type: "stopVoiceMode" };
+    }
+
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.VIDEO_GENERATE) > 0.6) {
+      return { type: "videoGenerate" };
+    }
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.VIDEO_SHOW) > 0.6) {
+      return { type: "videoShow" };
+    }
+    if (calculateMatchScore(normalizedText, RESERVED_COMMANDS.VIDEO_HIDE) > 0.6) {
+      return { type: "videoHide" };
     }
 
     // 2. ステップ番号の抽出（数字指定は優先度高）
