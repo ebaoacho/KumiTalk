@@ -530,11 +530,12 @@ export function ChatWindow({
       }
 
       try {
-        const response = await fetchWithProgress("/api/generate-video", {
+        const response = await fetch("/api/generate-video", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
+          cache: "no-store",
           body: JSON.stringify({
             chatId: selectedChatId,
             stepIndex,
@@ -596,7 +597,6 @@ export function ChatWindow({
       }
     },
     [
-      fetchWithProgress,
       handleOpenVideoDialog,
       onStepVideoUpdate,
       selectedChatId,
@@ -666,8 +666,13 @@ export function ChatWindow({
             timestamp: new Date(),
           });
         } else {
-          speakWithAutoResume("このステップの動画はまだ生成されていません。生成を開始します。");
-          void generateVideoForCurrentStep({ source: "voice", openDialog: true });
+          console.log("[VOICE][VIDEO] 動画が生成されていません");
+          speakWithAutoResume("このステップの動画はまだ生成されていません。動画を生成と言ってください。");
+          setVoiceFeedback({
+            type: 'info',
+            message: "動画が生成されていません",
+            timestamp: new Date(),
+          });
         }
         return;
       }
