@@ -15,6 +15,8 @@ import MarkdownRenderer from "./markdown-renderer";
 import { VoiceMicButton } from "@/components/voice/VoiceMicButton";
 import { VoiceCommandFeedback } from "@/components/voice/VoiceCommandFeedback";
 import { useVoiceControl, type VoiceCommand } from "@/hooks/useVoiceControl";
+import ClientAR from "@/app/ar/ClientAR";
+
 
 interface ChatWindowProps {
   selectedChatId?: string;
@@ -51,6 +53,7 @@ export function ChatWindow({
   const { fetchWithProgress } = useProgress();
 
   const [inputMessage, setInputMessage] = useState("");
+  const [showAR, setShowAR] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -987,8 +990,28 @@ export function ChatWindow({
               組立ステップ {assemblySteps.length} 件
             </span>
           )}
+          <Button
+            type="button"
+            onClick={() => setShowAR(prev => !prev)}
+            variant="outline"
+            className="rounded-full border-white/20 bg-white/10 text-white hover:bg-white/20"
+            title="AR表示">
+            {showAR ? "ARを閉じる" : "ARを表示"}
+          </Button>
         </div>
       </header>
+
+      {showAR && (
+        <div className="border-b border-white/10 bg-white/10 px-6 py-4 text-white/90 backdrop-blur">
+          <h2 className="text-base font-semibold">AR PoC</h2>
+          <p className="mt-1 text-xs text-white/70">
+            AndroidはWebXR、iOSはQuick Lookにフォールバックします。
+          </p>
+          <div className="mt-3">
+            <ClientAR />
+          </div>
+        </div>
+      )}
 
       <div className="flex h-full min-h-0 flex-col">
         {assemblySteps.length > 0 && (
