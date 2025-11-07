@@ -50,7 +50,7 @@ export function VideoPlayer({
         {isGenerating ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            動画を生成中…
+            動画を生成中（約5分）
           </>
         ) : hasVideo ? (
           <>
@@ -84,7 +84,7 @@ export function VideoPlayer({
         </span>
         <span>
           {isGenerating
-            ? "生成中です…数分お待ちください。"
+            ? "生成中です。完了まで約5分かかります。"
             : hasVideo
               ? "このステップの動画は生成済みです。"
               : "まだ動画は生成されていません。"}
