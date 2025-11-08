@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -24,19 +24,69 @@ export function ThreeDViewerDialog({
   title = "3Dビュー",
   modelSrc = DEFAULT_MODEL_SRC,
 }: ThreeDViewerDialogProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
   useEffect(() => {
     void import("@google/model-viewer");
   }, []);
 
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    const startCamera = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false,
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setCameraError(null);
+      } catch (error) {
+        console.warn("[3D Viewer] camera access denied:", error);
+        setCameraError(
+          error instanceof Error
+            ? error.message
+            : "カメラ映像を取得できませんでした。"
+        );
+      }
+    };
+
+    if (open) {
+      void startCamera();
+    }
+
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        stream = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.srcObject = null;
+      }
+    };
+  }, [open]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl border-white/15 bg-slate-950/95 text-white sm:w-[90vw]">
+      <DialogContent className="w-[90vw] max-w-[1200px] border-white/15 bg-slate-950/95 text-white sm:w-[90vw] lg:w-[80vw]">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold tracking-wide">
             {title}
           </DialogTitle>
         </DialogHeader>
-        <div className="relative w-full overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-900/60 min-h-[50vh] sm:min-h-[60vh]">
+        <div className="relative w-full overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-900/60 min-h-[65vh] sm:min-h-[75vh] lg:min-h-[80vh]">
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-slate-900/40" />
           <model-viewer
             src={modelSrc}
             camera-controls
@@ -50,6 +100,11 @@ export function ThreeDViewerDialog({
               background: "transparent",
             }}
           />
+          {cameraError && (
+            <div className="absolute bottom-4 right-4 rounded-full border border-rose-300/60 bg-rose-400/20 px-4 py-1 text-xs text-rose-50">
+              カメラ背景を使用できません
+            </div>
+          )}
         </div>
         <div className="flex justify-end">
           <Button

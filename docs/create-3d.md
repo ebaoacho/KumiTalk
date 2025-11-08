@@ -59,7 +59,14 @@ curl -X POST http://34.146.37.44:7860/infer -F "image=@./images/shelf.png"
    - 従来の `logo.glb` はフォールバックとして残す。
    - 完成ステップに「3Dで確認」ボタンを表示し、クリックでダイアログを開く。
 
----
+### カメラ映像を背景に使う場合
+
+1. ブラウザのカメラアクセス (`navigator.mediaDevices.getUserMedia`) で取得したストリームを `<video>` 要素に描画。  
+2. `ThreeDViewerDialog` 内で `position: relative` なラッパーを用意し、背景に `<video autoPlay muted playsInline>`、前面に `<model-viewer>` を重ねる。  
+3. カメラ開始/停止はダイアログの `open` 状態に合わせて制御し、クリーンアップ (`stream.getTracks().forEach(track => track.stop())`) を忘れない。  
+4. カメラ未許可や失敗時は単色背景にフォールバックする。
+
+--- 
 
 ## 4. データの同期
 
