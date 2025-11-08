@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, Box } from "lucide-react";
 import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import MarkdownRenderer from "./markdown-renderer";
 import { VoiceMicButton } from "@/components/voice/VoiceMicButton";
 import { VoiceCommandFeedback } from "@/components/voice/VoiceCommandFeedback";
 import { useVoiceControl, type VoiceCommand } from "@/hooks/useVoiceControl";
+import { ThreeDViewerDialog } from "@/components/three/three-d-viewer-dialog";
 
 interface ChatWindowProps {
   selectedChatId?: string;
@@ -93,6 +94,7 @@ export function ChatWindow({
   const [videoStatus, setVideoStatus] = useState<
     Record<number, { isGenerating: boolean; error: string | null }>
   >({});
+  const [show3dViewer, setShow3dViewer] = useState(false);
 
   const isRecognizedVoiceQuestion = useCallback((content: string) => {
     const trimmed = content.trim();
@@ -953,6 +955,7 @@ export function ChatWindow({
             onToggle={handleToggleListening}
           />
         )}
+        <ThreeDViewerDialog open={show3dViewer} onOpenChange={setShow3dViewer} />
       </>
     );
   }
@@ -980,7 +983,7 @@ export function ChatWindow({
             <p className="text-xs text-white/80">{fileName}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {isProcessingAssembly && (
             <span className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -992,6 +995,16 @@ export function ChatWindow({
               組立ステップ {assemblySteps.length} 件
             </span>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShow3dViewer(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border-white/30 bg-white/10 text-white hover:bg-white/20"
+          >
+            <Box className="h-4 w-4" />
+            3Dビュー
+          </Button>
         </div>
       </header>
 
@@ -1376,6 +1389,7 @@ export function ChatWindow({
         onToggle={handleToggleListening}
       />
     )}
+    <ThreeDViewerDialog open={show3dViewer} onOpenChange={setShow3dViewer} />
     <VoiceCommandFeedback
       feedback={voiceFeedback}
       onDismiss={() => setVoiceFeedback(null)}
