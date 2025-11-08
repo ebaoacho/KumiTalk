@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, Box, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, Box } from "lucide-react";
 import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
@@ -113,7 +113,35 @@ export function ChatWindow({
     Record<number, { isGenerating: boolean; error: string | null }>
   >({});
   const [show3dViewer, setShow3dViewer] = useState(false);
-  const steps = assemblySteps;
+  const steps = useMemo(() => {
+    if (!finalPreview) {
+      return assemblySteps;
+    }
+    const hasFinal = assemblySteps.some((step) => step.isFinalPreview);
+    if (hasFinal) {
+      return assemblySteps;
+    }
+    const lastIndex =
+      assemblySteps.reduce(
+        (max, step) =>
+          typeof step.stepIndex === "number"
+            ? Math.max(max, step.stepIndex)
+            : max,
+        0
+      ) || 0;
+    return [
+      ...assemblySteps,
+      {
+        stepIndex: lastIndex + 1,
+        title: "完成イメージ",
+        description: "すべての工程を終えた状態を最終確認できます。",
+        imageBase64: finalPreview,
+        videoBase64: undefined,
+        parts: [],
+        isFinalPreview: true,
+      },
+    ];
+  }, [assemblySteps, finalPreview]);
   const assemblyStepCount = assemblySteps.length;
   const viewerModelSrc = finalModelState.glbUrl ?? null;
   const isModelReady =
@@ -1306,37 +1334,75 @@ export function ChatWindow({
                       >
                         画像を拡大表示
                       </Button>
-                      {selectedChatId && !isFinalStepSelected && (
-                        <VideoPlayer
-                          videoBase64={currentVideoBase64}
-                          isGenerating={Boolean(currentVideoState?.isGenerating)}
-                          error={currentVideoState?.error ?? null}
-                          onGenerate={() => {
-                            void generateVideoForCurrentStep({
-                              source: "ui",
-                              openDialog: true,
-                            });
-                          }}
-                          onShow={() => {
-                            if (currentVideoState?.isGenerating) return;
-                            if (currentVideoBase64) {
-                              handleOpenVideoDialog(currentVideoBase64);
-                            } else {
+                      {isFinalStepSelected ? (
+                        <>
+                          <Button
+                            type="button"
+                            onClick={handleGenerateFinalModel}
+                            disabled={isModelProcessing}
+                            className="inline-flex items-center gap-2 rounded-full border border-emerald-300/40 bg-emerald-400/20 px-4 py-2 text-sm text-white hover:bg-emerald-400/30 disabled:cursor-progress disabled:opacity-70"
+                          >
+                            {isModelProcessing && (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            )}
+                            {isModelProcessing ? "3Dモデル生成中…" : "3Dモデル生成"}
+                          </Button>
+                          {isModelReady && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setShow3dViewer(true)}
+                              className="rounded-full border-white/30 bg-white/5 text-white hover:bg-white/10"
+                            >
+                              3Dで表示
+                            </Button>
+                          )}
+                          {isModelFailed && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={handleGenerateFinalModel}
+                              className="rounded-full border border-rose-300/50 bg-rose-500/15 text-rose-100 hover:bg-rose-500/25"
+                            >
+                              再試行
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        selectedChatId && (
+                          <VideoPlayer
+                            videoBase64={currentVideoBase64}
+                            isGenerating={Boolean(
+                              currentVideoState?.isGenerating
+                            )}
+                            error={currentVideoState?.error ?? null}
+                            onGenerate={() => {
                               void generateVideoForCurrentStep({
                                 source: "ui",
                                 openDialog: true,
                               });
-                            }
-                          }}
-                          onRetry={() => {
-                            void generateVideoForCurrentStep({
-                              source: "ui",
-                              openDialog: true,
-                              allowIfExists: true,
-                            });
-                          }}
-                          className="min-w-[180px]"
-                        />
+                            }}
+                            onShow={() => {
+                              if (currentVideoState?.isGenerating) return;
+                              if (currentVideoBase64) {
+                                handleOpenVideoDialog(currentVideoBase64);
+                              } else {
+                                void generateVideoForCurrentStep({
+                                  source: "ui",
+                                  openDialog: true,
+                                });
+                              }
+                            }}
+                            onRetry={() => {
+                              void generateVideoForCurrentStep({
+                                source: "ui",
+                                openDialog: true,
+                                allowIfExists: true,
+                              });
+                            }}
+                            className="min-w-[180px]"
+                          />
+                        )
                       )}
                       <Button
                         variant="outline"
@@ -1347,6 +1413,11 @@ export function ChatWindow({
                         全ステップ表示
                       </Button>
                     </div>
+                    {isFinalStepSelected && finalModelError && (
+                      <p className="mt-1 text-xs text-rose-200">
+                        {finalModelError}
+                      </p>
+                    )}
                   </div>
                 </div>
               </article>
@@ -1354,65 +1425,6 @@ export function ChatWindow({
            )
           )}
         </section>
-        )}
-
-        {finalPreview && (
-          <section className="border-b border-white/10 bg-white/10 px-6 py-6 backdrop-blur">
-            <div className="flex flex-col gap-4 text-white">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
-                <Sparkles className="h-4 w-4" />
-                完成イメージ
-              </div>
-              <p className="text-sm text-white/70">
-                すべての工程を終えた状態のプレビュー。カラーガイドの整合や取り付け位置を最後に確認してください。
-              </p>
-              <div className="overflow-hidden rounded-3xl border border-white/15 bg-white/5 p-2">
-                <img
-                  src={finalPreview}
-                  alt="完成形のレンダリング"
-                  className="w-full rounded-2xl bg-white object-contain"
-                  loading="lazy"
-                  decoding="async"
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="button"
-                  onClick={handleGenerateFinalModel}
-                  disabled={isModelProcessing}
-                  className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-900 hover:from-cyan-300 hover:to-emerald-300 disabled:cursor-progress disabled:opacity-70"
-                >
-                  {isModelProcessing && (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )}
-                  {isModelProcessing ? "3Dモデル生成中…" : "3Dモデルを生成"}
-                </Button>
-                {isModelReady && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShow3dViewer(true)}
-                    className="rounded-full border-white/30 bg-white/5 text-white hover:bg-white/10"
-                  >
-                    3Dで確認
-                  </Button>
-                )}
-                {isModelFailed && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleGenerateFinalModel}
-                    className="rounded-full border border-rose-300/50 bg-rose-500/15 text-rose-100 hover:bg-rose-500/25"
-                  >
-                    再試行
-                  </Button>
-                )}
-              </div>
-              {finalModelError && (
-                <p className="text-xs text-rose-200">{finalModelError}</p>
-              )}
-            </div>
-          </section>
         )}
 
         <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 py-6">
