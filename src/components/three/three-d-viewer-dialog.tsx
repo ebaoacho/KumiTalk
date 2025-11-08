@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
 type ThreeDViewerDialogProps = {
   open: boolean;
@@ -72,13 +72,14 @@ export function ThreeDViewerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[90vw] max-w-[1200px] border-white/15 bg-slate-950/95 text-white sm:w-[90vw] lg:w-[80vw]">
-        <DialogHeader>
-          <DialogTitle className="text-base font-semibold tracking-wide">
-            {title}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="relative w-full overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-900/60 min-h-[65vh] sm:min-h-[75vh] lg:min-h-[80vh]">
+      <DialogContent className="max-w-none w-[95vw] h-[90vh] border-none bg-slate-950 text-white p-0 flex flex-col justify-center items-center">
+        <VisuallyHidden>
+          <DialogHeader>
+              <DialogTitle>3Dビュー</DialogTitle>
+          </DialogHeader>
+        </VisuallyHidden>
+
+        <div className="relative w-[90vw] h-[80vh] overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-900/60">
           <video
             ref={videoRef}
             autoPlay
@@ -86,35 +87,27 @@ export function ThreeDViewerDialog({
             playsInline
             className="absolute inset-0 h-full w-full object-cover"
           />
-          <div className="absolute inset-0 bg-slate-900/40" />
-          <model-viewer
-            src={modelSrc}
-            camera-controls
-            auto-rotate
-            ar
-            exposure="1"
-            shadow-intensity="0.8"
-            style={{
-              width: "100%",
-              height: "100%",
-              background: "transparent",
-            }}
-          />
-          {cameraError && (
-            <div className="absolute bottom-4 right-4 rounded-full border border-rose-300/60 bg-rose-400/20 px-4 py-1 text-xs text-rose-50">
-              カメラ背景を使用できません
-            </div>
-          )}
+          <div className="absolute inset-0" />
+            <model-viewer
+              src={modelSrc}
+              camera-controls
+              auto-rotate
+              ar
+              exposure="1"
+              shadow-intensity="0.8"
+              style={{
+                width: "100%",
+                height: "100%",
+                background: "transparent",
+              }}
+            />
+            {cameraError && (
+              <div className="absolute bottom-4 right-4 rounded-full border border-rose-300/60 bg-rose-400/20 px-4 py-1 text-xs text-rose-50">
+                カメラ背景を使用できません
+              </div>
+            )}
         </div>
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="rounded-full border-white/30 bg-white/5 text-white hover:bg-white/20"
-          >
-            閉じる
-          </Button>
+        <div className="absolute bottom-6 right-8">
         </div>
       </DialogContent>
     </Dialog>
