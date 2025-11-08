@@ -97,7 +97,8 @@ export async function POST(
     );
     const fileName = `final-${chatId}.${extension}`;
     const formData = new FormData();
-    const blob = new Blob([buffer], { type: mimeType });
+    const uint8Array = Uint8Array.from(buffer);
+    const blob = new Blob([uint8Array], { type: mimeType });
     formData.append("image", blob, fileName);
 
     const apiResponse = await fetch(MODEL_API_ENDPOINT, {

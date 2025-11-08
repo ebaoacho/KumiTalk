@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  createElement,
+  type HTMLAttributes,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +14,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+
+type ModelViewerProps = HTMLAttributes<HTMLElement> & {
+  src?: string;
+  [key: string]: unknown;
+};
+
+const ModelViewer = (props: ModelViewerProps) =>
+  createElement("model-viewer" as any, props);
 
 type ThreeDViewerDialogProps = {
   open: boolean;
@@ -88,7 +102,7 @@ export function ThreeDViewerDialog({
             className="absolute inset-0 h-full w-full object-cover"
           />
           <div className="absolute inset-0" />
-            <model-viewer
+            <ModelViewer
               src={modelSrc}
               camera-controls
               auto-rotate

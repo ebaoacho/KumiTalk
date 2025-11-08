@@ -3,6 +3,22 @@
 import { useProgress } from "@/lib/progress";
 import { Loader2 } from "lucide-react";
 
+const overlayAnimationStyles = `
+  .progress-active {
+    animation: overlay-indeterminate 1.4s infinite;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @keyframes overlay-indeterminate {
+    0% {
+      transform: translateX(-120%);
+    }
+    100% {
+      transform: translateX(360%);
+    }
+  }
+`;
+
 export default function GlobalProgressOverlay() {
   const { isLoading } = useProgress();
 
@@ -28,22 +44,9 @@ export default function GlobalProgressOverlay() {
         </div>
       </div>
 
-      <style jsx>{`
-        .progress-active {
-          animation: overlay-indeterminate 1.4s infinite;
-          animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        @keyframes overlay-indeterminate {
-          0% {
-            transform: translateX(-120%);
-          }
-          100% {
-            transform: translateX(360%);
-          }
-        }
-      `}</style>
+      <style
+        dangerouslySetInnerHTML={{ __html: overlayAnimationStyles }}
+      />
     </div>
   );
 }
-
