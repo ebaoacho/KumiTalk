@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, Box } from "lucide-react";
+import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, Box, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ interface ChatWindowProps {
   assemblySteps?: AssemblyStep[];
   isProcessingAssembly?: boolean;
   onStepVideoUpdate?: (stepIndex: number, videoBase64: string) => void;
+  finalPreview?: string | null;
 }
 
 type StepFilter = "all" | number;
@@ -48,6 +49,7 @@ export function ChatWindow({
   assemblySteps = [],
   isProcessingAssembly = false,
   onStepVideoUpdate,
+  finalPreview,
 }: ChatWindowProps) {
   const { fetchWithProgress } = useProgress();
 
@@ -95,6 +97,36 @@ export function ChatWindow({
     Record<number, { isGenerating: boolean; error: string | null }>
   >({});
   const [show3dViewer, setShow3dViewer] = useState(false);
+  const steps = useMemo(() => {
+    if (!finalPreview) {
+      return assemblySteps;
+    }
+    // 過去データで既に付与済みの場合は重複させない
+    const alreadyHasFinal = assemblySteps.some(
+      (step) => step.isFinalPreview && step.imageBase64 === finalPreview
+    );
+    if (alreadyHasFinal) {
+      return assemblySteps;
+    }
+    const lastIndex =
+      assemblySteps.reduce(
+        (max, step) => Math.max(max, typeof step.stepIndex === "number" ? step.stepIndex : max),
+        0
+      ) || 0;
+    return [
+      ...assemblySteps,
+      {
+        stepIndex: lastIndex + 1,
+        title: "完成イメージ",
+        description: "すべての工程を終えた状態のプレビューです。",
+        imageBase64: finalPreview,
+        videoBase64: undefined,
+        parts: [],
+        isFinalPreview: true,
+      },
+    ];
+  }, [assemblySteps, finalPreview]);
+  const assemblyStepCount = assemblySteps.length;
 
   const isRecognizedVoiceQuestion = useCallback((content: string) => {
     const trimmed = content.trim();
@@ -153,7 +185,7 @@ export function ChatWindow({
 
   useEffect(() => {
     const initialOverrides: Record<number, string> = {};
-    for (const step of assemblySteps) {
+    for (const step of steps) {
       if (step.videoBase64) {
         initialOverrides[step.stepIndex] = step.videoBase64;
       }
@@ -161,14 +193,14 @@ export function ChatWindow({
     setVideoOverrides(initialOverrides);
     setVideoStatus((prev) => {
       const next: Record<number, { isGenerating: boolean; error: string | null }> = {};
-      for (const step of assemblySteps) {
+      for (const step of steps) {
         if (prev[step.stepIndex]) {
           next[step.stepIndex] = prev[step.stepIndex];
         }
       }
       return next;
     });
-  }, [assemblySteps]);
+  }, [steps]);
 
   const sanitizeMarkdownForSpeech = useCallback((text: string) => {
     let processed = text;
@@ -240,7 +272,7 @@ export function ChatWindow({
 
   useEffect(() => {
     setStepFilter("all");
-  }, [assemblySteps]);
+  }, [assemblySteps, finalPreview]);
 
   useEffect(() => {
     if (!selectedChatId) {
@@ -300,8 +332,9 @@ export function ChatWindow({
 
   const selectedStep =
     typeof stepFilter === "number"
-      ? assemblySteps.find((step) => step.stepIndex === stepFilter) ?? null
+      ? steps.find((step) => step.stepIndex === stepFilter) ?? null
       : null;
+  const isFinalStepSelected = Boolean(selectedStep?.isFinalPreview);
 
   useEffect(() => {
     setShowVideoDialog(false);
@@ -319,8 +352,8 @@ export function ChatWindow({
 
   // ステップの並び（インデックス順に揃える）
   const stepIndexes = useMemo(
-    () => [...assemblySteps.map((s) => s.stepIndex)].sort((a, b) => a - b),
-    [assemblySteps]
+    () => [...steps.map((s) => s.stepIndex)].sort((a, b) => a - b),
+    [steps]
   );
   const currentIdx = useMemo(
     () => (typeof stepFilter === "number" ? stepIndexes.indexOf(stepFilter) : -1),
@@ -496,6 +529,13 @@ export function ChatWindow({
         return;
       }
 
+      if (selectedStep.isFinalPreview) {
+        if (options?.source === "voice") {
+          speakWithAutoResume("完成イメージでは動画を生成できません。");
+        }
+        return;
+      }
+
       const stepIndex = selectedStep.stepIndex;
       const existingVideo =
         videoOverrides[stepIndex] ?? selectedStep.videoBase64 ?? undefined;
@@ -642,6 +682,14 @@ export function ChatWindow({
       }
 
       if (command.type === "videoGenerate") {
+        if (!selectedStep) {
+          speakWithAutoResume("ステップが選択されていません。");
+          return;
+        }
+        if (selectedStep.isFinalPreview) {
+          speakWithAutoResume("完成イメージでは動画を生成できません。");
+          return;
+        }
         void generateVideoForCurrentStep({ source: "voice" });
         return;
       }
@@ -649,6 +697,10 @@ export function ChatWindow({
       if (command.type === "videoShow") {
         if (!selectedStep) {
           speakWithAutoResume("ステップが選択されていません。");
+          return;
+        }
+        if (selectedStep.isFinalPreview) {
+          speakWithAutoResume("完成イメージには動画がありません。");
           return;
         }
         if (showVideoDialog) {
@@ -696,7 +748,7 @@ export function ChatWindow({
       }
 
       if (command.type === "step" && command.stepNumber) {
-        const target = assemblySteps.find((step) => step.stepIndex === command.stepNumber);
+        const target = steps.find((step) => step.stepIndex === command.stepNumber);
         if (target) {
           setStepFilter(command.stepNumber);
           speakWithAutoResume(`ステップ${command.stepNumber}に移動しました。${target.title}`);
@@ -706,7 +758,7 @@ export function ChatWindow({
             timestamp: new Date()
           });
         } else {
-          const maxStep = assemblySteps.length > 0 ? Math.max(...assemblySteps.map(s => s.stepIndex)) : 0;
+          const maxStep = steps.length > 0 ? Math.max(...steps.map(s => s.stepIndex)) : 0;
           speakWithAutoResume(`ステップ${command.stepNumber}は存在しません。利用可能なステップは1から${maxStep}です。`);
           setVoiceFeedback({
             type: 'error',
@@ -725,14 +777,14 @@ export function ChatWindow({
         if (currentIdx === -1) {
           const firstStep = stepIndexes[0];
           setStepFilter(firstStep);
-          const target = assemblySteps.find(step => step.stepIndex === firstStep);
+          const target = steps.find(step => step.stepIndex === firstStep);
           speakWithAutoResume(`ステップ${firstStep}に移動しました。${target?.title || ''}`);
           return;
         }
         if (currentIdx < stepIndexes.length - 1) {
           const nextStep = stepIndexes[currentIdx + 1];
           setStepFilter(nextStep);
-          const target = assemblySteps.find(step => step.stepIndex === nextStep);
+          const target = steps.find(step => step.stepIndex === nextStep);
           speakWithAutoResume(`ステップ${nextStep}に移動しました。${target?.title || ''}`);
           setVoiceFeedback({
             type: 'success',
@@ -758,14 +810,14 @@ export function ChatWindow({
         if (currentIdx === -1) {
           const lastStep = stepIndexes[stepIndexes.length - 1];
           setStepFilter(lastStep);
-          const target = assemblySteps.find(step => step.stepIndex === lastStep);
+          const target = steps.find(step => step.stepIndex === lastStep);
           speakWithAutoResume(`ステップ${lastStep}に移動しました。${target?.title || ''}`);
           return;
         }
         if (currentIdx > 0) {
           const prevStep = stepIndexes[currentIdx - 1];
           setStepFilter(prevStep);
-          const target = assemblySteps.find(step => step.stepIndex === prevStep);
+          const target = steps.find(step => step.stepIndex === prevStep);
           speakWithAutoResume(`ステップ${prevStep}に移動しました。${target?.title || ''}`);
         } else {
           speakWithAutoResume("これが最初のステップです。");
@@ -780,7 +832,7 @@ export function ChatWindow({
         }
         const firstStep = stepIndexes[0];
         setStepFilter(firstStep);
-        const target = assemblySteps.find(step => step.stepIndex === firstStep);
+        const target = steps.find(step => step.stepIndex === firstStep);
         speakWithAutoResume(`最初のステップ${firstStep}に移動しました。${target?.title || ''}`);
         return;
       }
@@ -792,14 +844,14 @@ export function ChatWindow({
         }
         const lastStep = stepIndexes[stepIndexes.length - 1];
         setStepFilter(lastStep);
-        const target = assemblySteps.find(step => step.stepIndex === lastStep);
+        const target = steps.find(step => step.stepIndex === lastStep);
         speakWithAutoResume(`最後のステップ${lastStep}に移動しました。${target?.title || ''}`);
         return;
       }
 
       if (command.type === "all") {
         setStepFilter("all");
-        speakWithAutoResume(`全${assemblySteps.length}ステップを表示しています。`);
+        speakWithAutoResume(`全${steps.length}ステップを表示しています。`);
         return;
       }
 
@@ -902,7 +954,7 @@ export function ChatWindow({
       }
     };
   }, [
-    assemblySteps,
+    steps,
     currentIdx,
     handleSend,
     isListening,
@@ -990,9 +1042,9 @@ export function ChatWindow({
               画像を抽出しています…
             </span>
           )}
-          {!isProcessingAssembly && assemblySteps.length > 0 && (
+          {!isProcessingAssembly && assemblyStepCount > 0 && (
             <span className="rounded-full border border-emerald-300/40 bg-emerald-400/25 px-3 py-1 text-xs font-semibold text-emerald-50">
-              組立ステップ {assemblySteps.length} 件
+              組立ステップ {assemblyStepCount} 件
             </span>
           )}
           <Button
@@ -1009,7 +1061,7 @@ export function ChatWindow({
       </header>
 
       <div className="flex h-full min-h-0 flex-col">
-        {assemblySteps.length > 0 && (
+        {steps.length > 0 && (
           <section className="border-b border-white/10 bg-white/10 px-6 py-6 backdrop-blur">
             {/* ヘッダー + ステップピル */}
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -1032,7 +1084,7 @@ export function ChatWindow({
                 >
                   全ステップ
                 </button>
-                {assemblySteps.map((step) => (
+                {steps.map((step) => (
                   <button
                     key={step.stepIndex}
                     type="button"
@@ -1053,7 +1105,7 @@ export function ChatWindow({
           {stepFilter === "all" ? (
             // これまで通り：全ステップのグリッド
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {assemblySteps.map((step) => (
+              {steps.map((step) => (
                 <article
                   key={step.stepIndex}
                   role="button"
@@ -1194,7 +1246,7 @@ export function ChatWindow({
                       >
                         画像を拡大表示
                       </Button>
-                      {selectedChatId && (
+                      {selectedChatId && !isFinalStepSelected && (
                         <VideoPlayer
                           videoBase64={currentVideoBase64}
                           isGenerating={Boolean(currentVideoState?.isGenerating)}
@@ -1243,6 +1295,29 @@ export function ChatWindow({
           )}
         </section>
         )}
+
+        {/* {finalPreview && (
+          <section className="border-b border-white/10 bg-white/10 px-6 py-6 backdrop-blur">
+            <div className="flex flex-col gap-4 text-white">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
+                <Sparkles className="h-4 w-4" />
+                完成イメージ
+              </div>
+              <p className="text-sm text-white/70">
+                すべての工程を終えた状態のプレビュー。カラーガイドの整合や取り付け位置を最後に確認してください。
+              </p>
+              <div className="overflow-hidden rounded-3xl border border-white/15 bg-white/5 p-2">
+                <img
+                  src={finalPreview}
+                  alt="完成形のレンダリング"
+                  className="w-full rounded-2xl bg-white object-contain"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+            </div>
+          </section>
+        )} */}
 
         <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 py-6">
           {isLoading ? (

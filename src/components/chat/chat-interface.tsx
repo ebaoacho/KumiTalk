@@ -41,6 +41,7 @@ export interface Chat {
   createdAt: string;
   updatedAt: string;
   assemblyStepCount?: number;
+  finalImageBase64?: string | null;
 }
 
 export interface Message {
@@ -68,6 +69,7 @@ export interface AssemblyStep {
   imageBase64?: string;
   videoBase64?: string;
   parts: AssemblyPart[];
+  isFinalPreview?: boolean;
 }
 
 type ChatView = "library" | "chat";
@@ -79,7 +81,13 @@ export function ChatInterface({ userId }: { userId: string }) {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [view, setView] = useState<ChatView>("library");
   const [assemblyStepStore, setAssemblyStepStore] = useState<
-    Record<string, AssemblyStep[]>
+    Record<
+      string,
+      {
+        steps: AssemblyStep[];
+        finalPreview?: string | null;
+      }
+    >
   >({});
   const [assemblyLoadingChatId, setAssemblyLoadingChatId] = useState<
     string | null
@@ -161,6 +169,7 @@ export function ChatInterface({ userId }: { userId: string }) {
 
         const created = (await response.json()) as Chat & {
           assemblySteps?: AssemblyStep[];
+          finalImageBase64?: string | null;
         };
 
         setChats((prev) => [...prev, created]);
@@ -170,7 +179,10 @@ export function ChatInterface({ userId }: { userId: string }) {
         if (Array.isArray(created.assemblySteps)) {
           setAssemblyStepStore((prev) => ({
             ...prev,
-            [created.id]: created.assemblySteps ?? [],
+            [created.id]: {
+              steps: created.assemblySteps ?? [],
+              finalPreview: created.finalImageBase64 ?? null,
+            },
           }));
         }
       } catch (error) {
@@ -195,8 +207,17 @@ export function ChatInterface({ userId }: { userId: string }) {
               "組立ステップの取得に失敗しました。"
           );
         }
-        const steps = (await response.json()) as AssemblyStep[];
-        setAssemblyStepStore((prev) => ({ ...prev, [chatId]: steps }));
+        const payload = (await response.json()) as {
+          steps: AssemblyStep[];
+          finalPreview?: string | null;
+        };
+        setAssemblyStepStore((prev) => ({
+          ...prev,
+          [chatId]: {
+            steps: payload.steps ?? [],
+            finalPreview: payload.finalPreview ?? null,
+          },
+        }));
       } catch (error) {
         console.error("Failed to fetch assembly steps:", error);
         alert(
@@ -230,14 +251,17 @@ export function ChatInterface({ userId }: { userId: string }) {
   const handleStepVideoUpdate = useCallback(
     (chatId: string, stepIndex: number, videoBase64: string) => {
       setAssemblyStepStore((prev) => {
-        const steps = prev[chatId];
-        if (!steps) return prev;
-        const updatedSteps = steps.map((step) =>
+        const entry = prev[chatId];
+        if (!entry) return prev;
+        const updatedSteps = entry.steps.map((step) =>
           step.stepIndex === stepIndex
             ? { ...step, videoBase64 }
             : step
         );
-        return { ...prev, [chatId]: updatedSteps };
+        return {
+          ...prev,
+          [chatId]: { ...entry, steps: updatedSteps },
+        };
       });
     },
     []
@@ -300,8 +324,11 @@ export function ChatInterface({ userId }: { userId: string }) {
     [chats, selectedChatId]
   );
 
-  const activeAssemblySteps =
-    (selectedChatId && assemblyStepStore[selectedChatId]) ?? [];
+  const activeAssemblyData = selectedChatId
+    ? assemblyStepStore[selectedChatId] ?? null
+    : null;
+  const activeAssemblySteps = activeAssemblyData?.steps ?? [];
+  const activeFinalPreview = activeAssemblyData?.finalPreview ?? null;
 
   const isAssemblyLoading =
     (assemblyLoadingChatId !== null &&
@@ -331,6 +358,7 @@ export function ChatInterface({ userId }: { userId: string }) {
             onBack={handleBackToLibrary}
             assemblySteps={activeAssemblySteps as AssemblyStep[]}
             isProcessingAssembly={isAssemblyLoading || isCreatingChat}
+            finalPreview={activeFinalPreview ?? undefined}
             onStepVideoUpdate={
               selectedChatId
                 ? (stepIndex, videoBase64) =>

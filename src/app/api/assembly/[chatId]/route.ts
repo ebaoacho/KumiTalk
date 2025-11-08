@@ -14,13 +14,22 @@ export async function GET(
       );
     }
 
+    const chat = await prisma.chat.findUnique({
+      where: { id: chatId },
+      select: { finalImageBase64: true },
+    });
+
+    if (!chat) {
+      return NextResponse.json({ error: "チャットが見つかりません" }, { status: 404 });
+    }
+
     const steps = await prisma.assemblyStep.findMany({
       where: { chatId },
       orderBy: { stepIndex: "asc" },
     });
 
-    return NextResponse.json(
-      steps.map((step) => ({
+    return NextResponse.json({
+      steps: steps.map((step) => ({
         id: step.id,
         chatId: step.chatId,
         stepIndex: step.stepIndex,
@@ -35,8 +44,9 @@ export async function GET(
         }>,
         createdAt: step.createdAt.toISOString(),
         updatedAt: step.updatedAt.toISOString(),
-      }))
-    );
+      })),
+      finalPreview: chat.finalImageBase64 ?? null,
+    });
   } catch (error) {
     console.error("Fetch assembly steps error:", error);
     return NextResponse.json(
