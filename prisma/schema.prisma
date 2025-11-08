@@ -14,6 +14,13 @@ enum Role {
   assistant
 }
 
+enum FinalModelStatus {
+  idle
+  processing
+  ready
+  failed
+}
+
 model User {
   id         String     @id @default(uuid()) @db.Uuid
   email      String     @db.Text
@@ -48,6 +55,8 @@ model Chat {
   documentId   String    @map("document_id") @db.Uuid
   title        String    @db.Text
   finalImageBase64 String? @map("final_image_base64") @db.Text
+  finalModelGlbUrl String? @map("final_model_glb_url") @db.Text
+  finalModelStatus FinalModelStatus @default(idle) @map("final_model_status")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @updatedAt      @map("updated_at") @db.Timestamptz(6)
 

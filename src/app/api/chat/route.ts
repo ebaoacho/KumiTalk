@@ -687,6 +687,8 @@ export async function POST(request: NextRequest) {
       updatedAt: chatRecord!.updatedAt.toISOString(),
       assemblySteps: stepsWithImages,
       finalImageBase64: finalImageBase64 ?? null,
+      finalModelGlbUrl: chatRecord!.finalModelGlbUrl ?? null,
+      finalModelStatus: chatRecord!.finalModelStatus,
     });
   } catch (error) {
     console.error("Chat creation error:", error);

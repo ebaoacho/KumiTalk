@@ -16,7 +16,11 @@ export async function GET(
 
     const chat = await prisma.chat.findUnique({
       where: { id: chatId },
-      select: { finalImageBase64: true },
+      select: {
+        finalImageBase64: true,
+        finalModelGlbUrl: true,
+        finalModelStatus: true,
+      },
     });
 
     if (!chat) {
@@ -46,6 +50,10 @@ export async function GET(
         updatedAt: step.updatedAt.toISOString(),
       })),
       finalPreview: chat.finalImageBase64 ?? null,
+      finalModel: {
+        glbUrl: chat.finalModelGlbUrl ?? null,
+        status: chat.finalModelStatus,
+      },
     });
   } catch (error) {
     console.error("Fetch assembly steps error:", error);

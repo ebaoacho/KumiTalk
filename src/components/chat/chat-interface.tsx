@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useProgress } from "@/lib/progress";
-import { Role } from "@prisma/client";
+import { Role, FinalModelStatus } from "@prisma/client";
 import { ChatSidebar } from "./chat-sidebar";
 import { ChatWindow } from "./chat-window";
 import {
@@ -42,6 +42,8 @@ export interface Chat {
   updatedAt: string;
   assemblyStepCount?: number;
   finalImageBase64?: string | null;
+  finalModelGlbUrl?: string | null;
+  finalModelStatus?: FinalModelStatus;
 }
 
 export interface Message {
@@ -86,6 +88,10 @@ export function ChatInterface({ userId }: { userId: string }) {
       {
         steps: AssemblyStep[];
         finalPreview?: string | null;
+        finalModel?: {
+          glbUrl?: string | null;
+          status: FinalModelStatus;
+        };
       }
     >
   >({});
@@ -170,6 +176,8 @@ export function ChatInterface({ userId }: { userId: string }) {
         const created = (await response.json()) as Chat & {
           assemblySteps?: AssemblyStep[];
           finalImageBase64?: string | null;
+          finalModelGlbUrl?: string | null;
+          finalModelStatus?: FinalModelStatus;
         };
 
         setChats((prev) => [...prev, created]);
@@ -182,6 +190,10 @@ export function ChatInterface({ userId }: { userId: string }) {
             [created.id]: {
               steps: created.assemblySteps ?? [],
               finalPreview: created.finalImageBase64 ?? null,
+              finalModel: {
+                glbUrl: created.finalModelGlbUrl ?? null,
+                status: created.finalModelStatus ?? FinalModelStatus.idle,
+              },
             },
           }));
         }
@@ -210,12 +222,20 @@ export function ChatInterface({ userId }: { userId: string }) {
         const payload = (await response.json()) as {
           steps: AssemblyStep[];
           finalPreview?: string | null;
+          finalModel?: {
+            glbUrl?: string | null;
+            status?: FinalModelStatus;
+          };
         };
         setAssemblyStepStore((prev) => ({
           ...prev,
           [chatId]: {
             steps: payload.steps ?? [],
             finalPreview: payload.finalPreview ?? null,
+            finalModel: {
+              glbUrl: payload.finalModel?.glbUrl ?? null,
+              status: payload.finalModel?.status ?? FinalModelStatus.idle,
+            },
           },
         }));
       } catch (error) {
@@ -261,6 +281,25 @@ export function ChatInterface({ userId }: { userId: string }) {
         return {
           ...prev,
           [chatId]: { ...entry, steps: updatedSteps },
+        };
+      });
+    },
+    []
+  );
+  const handleFinalModelUpdate = useCallback(
+    (chatId: string, data: { glbUrl?: string | null; status: FinalModelStatus }) => {
+      setAssemblyStepStore((prev) => {
+        const entry = prev[chatId];
+        if (!entry) return prev;
+        return {
+          ...prev,
+          [chatId]: {
+            ...entry,
+            finalModel: {
+              glbUrl: data.glbUrl ?? entry.finalModel?.glbUrl ?? null,
+              status: data.status ?? entry.finalModel?.status ?? FinalModelStatus.idle,
+            },
+          },
         };
       });
     },
@@ -329,6 +368,7 @@ export function ChatInterface({ userId }: { userId: string }) {
     : null;
   const activeAssemblySteps = activeAssemblyData?.steps ?? [];
   const activeFinalPreview = activeAssemblyData?.finalPreview ?? null;
+  const activeFinalModel = activeAssemblyData?.finalModel ?? null;
 
   const isAssemblyLoading =
     (assemblyLoadingChatId !== null &&
@@ -359,10 +399,21 @@ export function ChatInterface({ userId }: { userId: string }) {
             assemblySteps={activeAssemblySteps as AssemblyStep[]}
             isProcessingAssembly={isAssemblyLoading || isCreatingChat}
             finalPreview={activeFinalPreview ?? undefined}
+            finalModel={
+              activeFinalModel ?? {
+                glbUrl: null,
+                status: FinalModelStatus.idle,
+              }
+            }
             onStepVideoUpdate={
               selectedChatId
                 ? (stepIndex, videoBase64) =>
                     handleStepVideoUpdate(selectedChatId, stepIndex, videoBase64)
+                : undefined
+            }
+            onFinalModelUpdate={
+              selectedChatId
+                ? (data) => handleFinalModelUpdate(selectedChatId, data)
                 : undefined
             }
           />

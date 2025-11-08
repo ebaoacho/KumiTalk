@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AssemblyStep, Chat, Message } from "./chat-interface";
+import { FinalModelStatus } from "@prisma/client";
 import { ShowImageDialog } from "../dialog/show-image-dialog";
 import { ShowVideoDialog } from "@/components/dialog/show-video-dialog";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
@@ -25,6 +26,11 @@ interface ChatWindowProps {
   isProcessingAssembly?: boolean;
   onStepVideoUpdate?: (stepIndex: number, videoBase64: string) => void;
   finalPreview?: string | null;
+  finalModel?: {
+    glbUrl?: string | null;
+    status: FinalModelStatus;
+  };
+  onFinalModelUpdate?: (data: { glbUrl?: string | null; status: FinalModelStatus }) => void;
 }
 
 type StepFilter = "all" | number;
@@ -50,6 +56,8 @@ export function ChatWindow({
   isProcessingAssembly = false,
   onStepVideoUpdate,
   finalPreview,
+  finalModel,
+  onFinalModelUpdate,
 }: ChatWindowProps) {
   const { fetchWithProgress } = useProgress();
 
@@ -66,6 +74,14 @@ export function ChatWindow({
     message: string;
     timestamp: Date;
   } | null>(null);
+  const [finalModelState, setFinalModelState] = useState<{
+    glbUrl?: string | null;
+    status: FinalModelStatus;
+  }>({
+    glbUrl: finalModel?.glbUrl ?? null,
+    status: finalModel?.status ?? FinalModelStatus.idle,
+  });
+  const [finalModelError, setFinalModelError] = useState<string | null>(null);
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -97,36 +113,13 @@ export function ChatWindow({
     Record<number, { isGenerating: boolean; error: string | null }>
   >({});
   const [show3dViewer, setShow3dViewer] = useState(false);
-  const steps = useMemo(() => {
-    if (!finalPreview) {
-      return assemblySteps;
-    }
-    // 過去データで既に付与済みの場合は重複させない
-    const alreadyHasFinal = assemblySteps.some(
-      (step) => step.isFinalPreview && step.imageBase64 === finalPreview
-    );
-    if (alreadyHasFinal) {
-      return assemblySteps;
-    }
-    const lastIndex =
-      assemblySteps.reduce(
-        (max, step) => Math.max(max, typeof step.stepIndex === "number" ? step.stepIndex : max),
-        0
-      ) || 0;
-    return [
-      ...assemblySteps,
-      {
-        stepIndex: lastIndex + 1,
-        title: "完成イメージ",
-        description: "すべての工程を終えた状態のプレビューです。",
-        imageBase64: finalPreview,
-        videoBase64: undefined,
-        parts: [],
-        isFinalPreview: true,
-      },
-    ];
-  }, [assemblySteps, finalPreview]);
+  const steps = assemblySteps;
   const assemblyStepCount = assemblySteps.length;
+  const viewerModelSrc = finalModelState.glbUrl ?? null;
+  const isModelReady =
+    finalModelState.status === FinalModelStatus.ready && Boolean(viewerModelSrc);
+  const isModelProcessing = finalModelState.status === FinalModelStatus.processing;
+  const isModelFailed = finalModelState.status === FinalModelStatus.failed;
 
   const isRecognizedVoiceQuestion = useCallback((content: string) => {
     const trimmed = content.trim();
@@ -225,6 +218,13 @@ export function ChatWindow({
     }
   }, [isListening, startListening]);
 
+  useEffect(() => {
+    setFinalModelState({
+      glbUrl: finalModel?.glbUrl ?? null,
+      status: finalModel?.status ?? FinalModelStatus.idle,
+    });
+  }, [finalModel?.glbUrl, finalModel?.status]);
+
   const speakWithAutoResume = useCallback(
     (text: string) => {
       speak(text, {
@@ -272,7 +272,7 @@ export function ChatWindow({
 
   useEffect(() => {
     setStepFilter("all");
-  }, [assemblySteps, finalPreview]);
+  }, [steps]);
 
   useEffect(() => {
     if (!selectedChatId) {
@@ -649,6 +649,54 @@ export function ChatWindow({
     ]
   );
 
+  const handleGenerateFinalModel = useCallback(async () => {
+    if (!selectedChatId) return;
+    setFinalModelError(null);
+    setFinalModelState((prev) => ({
+      glbUrl: prev.glbUrl,
+      status: FinalModelStatus.processing,
+    }));
+    try {
+      const response = await fetchWithProgress(`/api/final-model/${selectedChatId}`, {
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        glbUrl?: string;
+        status?: string;
+        error?: string;
+      };
+      if (!response.ok || !payload.glbUrl) {
+        throw new Error(
+          payload.error ??
+            `3Dモデルの生成に失敗しました（status ${response.status}）`
+        );
+      }
+      setFinalModelState({
+        glbUrl: payload.glbUrl,
+        status: FinalModelStatus.ready,
+      });
+      setFinalModelError(null);
+      onFinalModelUpdate?.({
+        glbUrl: payload.glbUrl,
+        status: FinalModelStatus.ready,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "3Dモデルの生成に失敗しました。";
+      setFinalModelError(message);
+      setFinalModelState((prev) => ({
+        glbUrl: prev.glbUrl ?? null,
+        status: FinalModelStatus.failed,
+      }));
+      onFinalModelUpdate?.({
+        glbUrl: null,
+        status: FinalModelStatus.failed,
+      });
+    }
+  }, [fetchWithProgress, onFinalModelUpdate, selectedChatId]);
+
   useEffect(() => {
     voiceCommandHandlerRef.current = (command: VoiceCommand) => {
       if (command.type === "stopSpeaking") {
@@ -1007,7 +1055,11 @@ export function ChatWindow({
             onToggle={handleToggleListening}
           />
         )}
-        <ThreeDViewerDialog open={show3dViewer} onOpenChange={setShow3dViewer} />
+        <ThreeDViewerDialog
+          open={show3dViewer}
+          onOpenChange={setShow3dViewer}
+          modelSrc={viewerModelSrc ?? undefined}
+        />
       </>
     );
   }
@@ -1052,11 +1104,19 @@ export function ChatWindow({
             variant="outline"
             size="sm"
             onClick={() => setShow3dViewer(true)}
-            className="inline-flex items-center gap-1.5 rounded-full border-white/30 bg-white/10 text-white hover:bg-white/20"
+            disabled={!isModelReady}
+            className="inline-flex items-center gap-1.5 rounded-full border-white/30 bg-white/10 text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Box className="h-4 w-4" />
             3Dビュー
           </Button>
+          {!isModelReady && (
+            <span className="text-xs text-white/60">
+              {isModelProcessing
+                ? "3Dモデル生成中…"
+                : "完成形を生成すると3D表示できます"}
+            </span>
+          )}
         </div>
       </header>
 
@@ -1296,7 +1356,7 @@ export function ChatWindow({
         </section>
         )}
 
-        {/* {finalPreview && (
+        {finalPreview && (
           <section className="border-b border-white/10 bg-white/10 px-6 py-6 backdrop-blur">
             <div className="flex flex-col gap-4 text-white">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
@@ -1315,9 +1375,45 @@ export function ChatWindow({
                   decoding="async"
                 />
               </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  onClick={handleGenerateFinalModel}
+                  disabled={isModelProcessing}
+                  className="inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-900 hover:from-cyan-300 hover:to-emerald-300 disabled:cursor-progress disabled:opacity-70"
+                >
+                  {isModelProcessing && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {isModelProcessing ? "3Dモデル生成中…" : "3Dモデルを生成"}
+                </Button>
+                {isModelReady && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShow3dViewer(true)}
+                    className="rounded-full border-white/30 bg-white/5 text-white hover:bg-white/10"
+                  >
+                    3Dで確認
+                  </Button>
+                )}
+                {isModelFailed && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleGenerateFinalModel}
+                    className="rounded-full border border-rose-300/50 bg-rose-500/15 text-rose-100 hover:bg-rose-500/25"
+                  >
+                    再試行
+                  </Button>
+                )}
+              </div>
+              {finalModelError && (
+                <p className="text-xs text-rose-200">{finalModelError}</p>
+              )}
             </div>
           </section>
-        )} */}
+        )}
 
         <div ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 py-6">
           {isLoading ? (
@@ -1464,7 +1560,11 @@ export function ChatWindow({
         onToggle={handleToggleListening}
       />
     )}
-    <ThreeDViewerDialog open={show3dViewer} onOpenChange={setShow3dViewer} />
+    <ThreeDViewerDialog
+      open={show3dViewer}
+      onOpenChange={setShow3dViewer}
+      modelSrc={viewerModelSrc ?? undefined}
+    />
     <VoiceCommandFeedback
       feedback={voiceFeedback}
       onDismiss={() => setVoiceFeedback(null)}
