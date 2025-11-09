@@ -2,6 +2,17 @@
 
 import { useProgress } from "@/lib/progress";
 
+const topProgressStyles = `
+  @keyframes indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+`;
+
 export default function TopProgressBar() {
   const { isLoading } = useProgress();
 
@@ -23,16 +34,9 @@ export default function TopProgressBar() {
           }}
         />
       </div>
-      <style jsx>{`
-        @keyframes indeterminate {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(400%);
-          }
-        }
-      `}</style>
+      <style
+        dangerouslySetInnerHTML={{ __html: topProgressStyles }}
+      />
     </div>
   );
 }

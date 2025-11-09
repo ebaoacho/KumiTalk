@@ -1,13 +1,14 @@
 ﻿"use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Loader2, Send, ChevronLeft, ChevronRight, Box } from "lucide-react";
 import Image from "next/image";
 import { useProgress } from "@/lib/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AssemblyStep, Chat, Message } from "./chat-interface";
+import { FinalModelStatus } from "@prisma/client";
 import { ShowImageDialog } from "../dialog/show-image-dialog";
 import { ShowVideoDialog } from "@/components/dialog/show-video-dialog";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
@@ -15,6 +16,7 @@ import MarkdownRenderer from "./markdown-renderer";
 import { VoiceMicButton } from "@/components/voice/VoiceMicButton";
 import { VoiceCommandFeedback } from "@/components/voice/VoiceCommandFeedback";
 import { useVoiceControl, type VoiceCommand } from "@/hooks/useVoiceControl";
+import { ThreeDViewerDialog } from "@/components/three/three-d-viewer-dialog";
 
 interface ChatWindowProps {
   selectedChatId?: string;
@@ -23,6 +25,12 @@ interface ChatWindowProps {
   assemblySteps?: AssemblyStep[];
   isProcessingAssembly?: boolean;
   onStepVideoUpdate?: (stepIndex: number, videoBase64: string) => void;
+  finalPreview?: string | null;
+  finalModel?: {
+    glbUrl?: string | null;
+    status: FinalModelStatus;
+  };
+  onFinalModelUpdate?: (data: { glbUrl?: string | null; status: FinalModelStatus }) => void;
 }
 
 type StepFilter = "all" | number;
@@ -47,6 +55,9 @@ export function ChatWindow({
   assemblySteps = [],
   isProcessingAssembly = false,
   onStepVideoUpdate,
+  finalPreview,
+  finalModel,
+  onFinalModelUpdate,
 }: ChatWindowProps) {
   const { fetchWithProgress } = useProgress();
 
@@ -63,6 +74,14 @@ export function ChatWindow({
     message: string;
     timestamp: Date;
   } | null>(null);
+  const [finalModelState, setFinalModelState] = useState<{
+    glbUrl?: string | null;
+    status: FinalModelStatus;
+  }>({
+    glbUrl: finalModel?.glbUrl ?? null,
+    status: finalModel?.status ?? FinalModelStatus.idle,
+  });
+  const [finalModelError, setFinalModelError] = useState<string | null>(null);
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -93,6 +112,42 @@ export function ChatWindow({
   const [videoStatus, setVideoStatus] = useState<
     Record<number, { isGenerating: boolean; error: string | null }>
   >({});
+  const [show3dViewer, setShow3dViewer] = useState(false);
+  const steps = useMemo(() => {
+    if (!finalPreview) {
+      return assemblySteps;
+    }
+    const hasFinal = assemblySteps.some((step) => step.isFinalPreview);
+    if (hasFinal) {
+      return assemblySteps;
+    }
+    const lastIndex =
+      assemblySteps.reduce(
+        (max, step) =>
+          typeof step.stepIndex === "number"
+            ? Math.max(max, step.stepIndex)
+            : max,
+        0
+      ) || 0;
+    return [
+      ...assemblySteps,
+      {
+        stepIndex: lastIndex + 1,
+        title: "完成イメージ",
+        description: "すべての工程を終えた状態を最終確認できます。",
+        imageBase64: finalPreview,
+        videoBase64: undefined,
+        parts: [],
+        isFinalPreview: true,
+      },
+    ];
+  }, [assemblySteps, finalPreview]);
+  const assemblyStepCount = assemblySteps.length;
+  const viewerModelSrc = finalModelState.glbUrl ?? null;
+  const isModelReady =
+    finalModelState.status === FinalModelStatus.ready && Boolean(viewerModelSrc);
+  const isModelProcessing = finalModelState.status === FinalModelStatus.processing;
+  const isModelFailed = finalModelState.status === FinalModelStatus.failed;
 
   const isRecognizedVoiceQuestion = useCallback((content: string) => {
     const trimmed = content.trim();
@@ -151,7 +206,7 @@ export function ChatWindow({
 
   useEffect(() => {
     const initialOverrides: Record<number, string> = {};
-    for (const step of assemblySteps) {
+    for (const step of steps) {
       if (step.videoBase64) {
         initialOverrides[step.stepIndex] = step.videoBase64;
       }
@@ -159,14 +214,14 @@ export function ChatWindow({
     setVideoOverrides(initialOverrides);
     setVideoStatus((prev) => {
       const next: Record<number, { isGenerating: boolean; error: string | null }> = {};
-      for (const step of assemblySteps) {
+      for (const step of steps) {
         if (prev[step.stepIndex]) {
           next[step.stepIndex] = prev[step.stepIndex];
         }
       }
       return next;
     });
-  }, [assemblySteps]);
+  }, [steps]);
 
   const sanitizeMarkdownForSpeech = useCallback((text: string) => {
     let processed = text;
@@ -190,6 +245,13 @@ export function ChatWindow({
       startListening();
     }
   }, [isListening, startListening]);
+
+  useEffect(() => {
+    setFinalModelState({
+      glbUrl: finalModel?.glbUrl ?? null,
+      status: finalModel?.status ?? FinalModelStatus.idle,
+    });
+  }, [finalModel?.glbUrl, finalModel?.status]);
 
   const speakWithAutoResume = useCallback(
     (text: string) => {
@@ -238,7 +300,7 @@ export function ChatWindow({
 
   useEffect(() => {
     setStepFilter("all");
-  }, [assemblySteps]);
+  }, [steps]);
 
   useEffect(() => {
     if (!selectedChatId) {
@@ -298,8 +360,9 @@ export function ChatWindow({
 
   const selectedStep =
     typeof stepFilter === "number"
-      ? assemblySteps.find((step) => step.stepIndex === stepFilter) ?? null
+      ? steps.find((step) => step.stepIndex === stepFilter) ?? null
       : null;
+  const isFinalStepSelected = Boolean(selectedStep?.isFinalPreview);
 
   useEffect(() => {
     setShowVideoDialog(false);
@@ -317,8 +380,8 @@ export function ChatWindow({
 
   // ステップの並び（インデックス順に揃える）
   const stepIndexes = useMemo(
-    () => [...assemblySteps.map((s) => s.stepIndex)].sort((a, b) => a - b),
-    [assemblySteps]
+    () => [...steps.map((s) => s.stepIndex)].sort((a, b) => a - b),
+    [steps]
   );
   const currentIdx = useMemo(
     () => (typeof stepFilter === "number" ? stepIndexes.indexOf(stepFilter) : -1),
@@ -494,6 +557,13 @@ export function ChatWindow({
         return;
       }
 
+      if (selectedStep.isFinalPreview) {
+        if (options?.source === "voice") {
+          speakWithAutoResume("完成イメージでは動画を生成できません。");
+        }
+        return;
+      }
+
       const stepIndex = selectedStep.stepIndex;
       const existingVideo =
         videoOverrides[stepIndex] ?? selectedStep.videoBase64 ?? undefined;
@@ -607,6 +677,54 @@ export function ChatWindow({
     ]
   );
 
+  const handleGenerateFinalModel = useCallback(async () => {
+    if (!selectedChatId) return;
+    setFinalModelError(null);
+    setFinalModelState((prev) => ({
+      glbUrl: prev.glbUrl,
+      status: FinalModelStatus.processing,
+    }));
+    try {
+      const response = await fetchWithProgress(`/api/final-model/${selectedChatId}`, {
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        glbUrl?: string;
+        status?: string;
+        error?: string;
+      };
+      if (!response.ok || !payload.glbUrl) {
+        throw new Error(
+          payload.error ??
+            `3Dモデルの生成に失敗しました（status ${response.status}）`
+        );
+      }
+      setFinalModelState({
+        glbUrl: payload.glbUrl,
+        status: FinalModelStatus.ready,
+      });
+      setFinalModelError(null);
+      onFinalModelUpdate?.({
+        glbUrl: payload.glbUrl,
+        status: FinalModelStatus.ready,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "3Dモデルの生成に失敗しました。";
+      setFinalModelError(message);
+      setFinalModelState((prev) => ({
+        glbUrl: prev.glbUrl ?? null,
+        status: FinalModelStatus.failed,
+      }));
+      onFinalModelUpdate?.({
+        glbUrl: null,
+        status: FinalModelStatus.failed,
+      });
+    }
+  }, [fetchWithProgress, onFinalModelUpdate, selectedChatId]);
+
   useEffect(() => {
     voiceCommandHandlerRef.current = (command: VoiceCommand) => {
       if (command.type === "stopSpeaking") {
@@ -640,6 +758,14 @@ export function ChatWindow({
       }
 
       if (command.type === "videoGenerate") {
+        if (!selectedStep) {
+          speakWithAutoResume("ステップが選択されていません。");
+          return;
+        }
+        if (selectedStep.isFinalPreview) {
+          speakWithAutoResume("完成イメージでは動画を生成できません。");
+          return;
+        }
         void generateVideoForCurrentStep({ source: "voice" });
         return;
       }
@@ -647,6 +773,10 @@ export function ChatWindow({
       if (command.type === "videoShow") {
         if (!selectedStep) {
           speakWithAutoResume("ステップが選択されていません。");
+          return;
+        }
+        if (selectedStep.isFinalPreview) {
+          speakWithAutoResume("完成イメージには動画がありません。");
           return;
         }
         if (showVideoDialog) {
@@ -694,7 +824,7 @@ export function ChatWindow({
       }
 
       if (command.type === "step" && command.stepNumber) {
-        const target = assemblySteps.find((step) => step.stepIndex === command.stepNumber);
+        const target = steps.find((step) => step.stepIndex === command.stepNumber);
         if (target) {
           setStepFilter(command.stepNumber);
           speakWithAutoResume(`ステップ${command.stepNumber}に移動しました。${target.title}`);
@@ -704,7 +834,7 @@ export function ChatWindow({
             timestamp: new Date()
           });
         } else {
-          const maxStep = assemblySteps.length > 0 ? Math.max(...assemblySteps.map(s => s.stepIndex)) : 0;
+          const maxStep = steps.length > 0 ? Math.max(...steps.map(s => s.stepIndex)) : 0;
           speakWithAutoResume(`ステップ${command.stepNumber}は存在しません。利用可能なステップは1から${maxStep}です。`);
           setVoiceFeedback({
             type: 'error',
@@ -723,14 +853,14 @@ export function ChatWindow({
         if (currentIdx === -1) {
           const firstStep = stepIndexes[0];
           setStepFilter(firstStep);
-          const target = assemblySteps.find(step => step.stepIndex === firstStep);
+          const target = steps.find(step => step.stepIndex === firstStep);
           speakWithAutoResume(`ステップ${firstStep}に移動しました。${target?.title || ''}`);
           return;
         }
         if (currentIdx < stepIndexes.length - 1) {
           const nextStep = stepIndexes[currentIdx + 1];
           setStepFilter(nextStep);
-          const target = assemblySteps.find(step => step.stepIndex === nextStep);
+          const target = steps.find(step => step.stepIndex === nextStep);
           speakWithAutoResume(`ステップ${nextStep}に移動しました。${target?.title || ''}`);
           setVoiceFeedback({
             type: 'success',
@@ -756,14 +886,14 @@ export function ChatWindow({
         if (currentIdx === -1) {
           const lastStep = stepIndexes[stepIndexes.length - 1];
           setStepFilter(lastStep);
-          const target = assemblySteps.find(step => step.stepIndex === lastStep);
+          const target = steps.find(step => step.stepIndex === lastStep);
           speakWithAutoResume(`ステップ${lastStep}に移動しました。${target?.title || ''}`);
           return;
         }
         if (currentIdx > 0) {
           const prevStep = stepIndexes[currentIdx - 1];
           setStepFilter(prevStep);
-          const target = assemblySteps.find(step => step.stepIndex === prevStep);
+          const target = steps.find(step => step.stepIndex === prevStep);
           speakWithAutoResume(`ステップ${prevStep}に移動しました。${target?.title || ''}`);
         } else {
           speakWithAutoResume("これが最初のステップです。");
@@ -778,7 +908,7 @@ export function ChatWindow({
         }
         const firstStep = stepIndexes[0];
         setStepFilter(firstStep);
-        const target = assemblySteps.find(step => step.stepIndex === firstStep);
+        const target = steps.find(step => step.stepIndex === firstStep);
         speakWithAutoResume(`最初のステップ${firstStep}に移動しました。${target?.title || ''}`);
         return;
       }
@@ -790,14 +920,14 @@ export function ChatWindow({
         }
         const lastStep = stepIndexes[stepIndexes.length - 1];
         setStepFilter(lastStep);
-        const target = assemblySteps.find(step => step.stepIndex === lastStep);
+        const target = steps.find(step => step.stepIndex === lastStep);
         speakWithAutoResume(`最後のステップ${lastStep}に移動しました。${target?.title || ''}`);
         return;
       }
 
       if (command.type === "all") {
         setStepFilter("all");
-        speakWithAutoResume(`全${assemblySteps.length}ステップを表示しています。`);
+        speakWithAutoResume(`全${steps.length}ステップを表示しています。`);
         return;
       }
 
@@ -900,7 +1030,7 @@ export function ChatWindow({
       }
     };
   }, [
-    assemblySteps,
+    steps,
     currentIdx,
     handleSend,
     isListening,
@@ -953,6 +1083,11 @@ export function ChatWindow({
             onToggle={handleToggleListening}
           />
         )}
+        <ThreeDViewerDialog
+          open={show3dViewer}
+          onOpenChange={setShow3dViewer}
+          modelSrc={viewerModelSrc ?? undefined}
+        />
       </>
     );
   }
@@ -980,23 +1115,41 @@ export function ChatWindow({
             <p className="text-xs text-white/80">{fileName}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {isProcessingAssembly && (
             <span className="flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-white/80">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               画像を抽出しています…
             </span>
           )}
-          {!isProcessingAssembly && assemblySteps.length > 0 && (
+          {!isProcessingAssembly && assemblyStepCount > 0 && (
             <span className="rounded-full border border-emerald-300/40 bg-emerald-400/25 px-3 py-1 text-xs font-semibold text-emerald-50">
-              組立ステップ {assemblySteps.length} 件
+              組立ステップ {assemblyStepCount} 件
+            </span>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShow3dViewer(true)}
+            disabled={!isModelReady}
+            className="inline-flex items-center gap-1.5 rounded-full border-white/30 bg-white/10 text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Box className="h-4 w-4" />
+            3Dビュー
+          </Button>
+          {!isModelReady && (
+            <span className="text-xs text-white/60">
+              {isModelProcessing
+                ? "3Dモデル生成中…"
+                : "完成形を生成すると3D表示できます"}
             </span>
           )}
         </div>
       </header>
 
       <div className="flex h-full min-h-0 flex-col">
-        {assemblySteps.length > 0 && (
+        {steps.length > 0 && (
           <section className="border-b border-white/10 bg-white/10 px-6 py-6 backdrop-blur">
             {/* ヘッダー + ステップピル */}
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -1019,7 +1172,7 @@ export function ChatWindow({
                 >
                   全ステップ
                 </button>
-                {assemblySteps.map((step) => (
+                {steps.map((step) => (
                   <button
                     key={step.stepIndex}
                     type="button"
@@ -1040,7 +1193,7 @@ export function ChatWindow({
           {stepFilter === "all" ? (
             // これまで通り：全ステップのグリッド
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {assemblySteps.map((step) => (
+              {steps.map((step) => (
                 <article
                   key={step.stepIndex}
                   role="button"
@@ -1181,37 +1334,75 @@ export function ChatWindow({
                       >
                         画像を拡大表示
                       </Button>
-                      {selectedChatId && (
-                        <VideoPlayer
-                          videoBase64={currentVideoBase64}
-                          isGenerating={Boolean(currentVideoState?.isGenerating)}
-                          error={currentVideoState?.error ?? null}
-                          onGenerate={() => {
-                            void generateVideoForCurrentStep({
-                              source: "ui",
-                              openDialog: true,
-                            });
-                          }}
-                          onShow={() => {
-                            if (currentVideoState?.isGenerating) return;
-                            if (currentVideoBase64) {
-                              handleOpenVideoDialog(currentVideoBase64);
-                            } else {
+                      {isFinalStepSelected ? (
+                        <>
+                          <Button
+                            type="button"
+                            onClick={handleGenerateFinalModel}
+                            disabled={isModelProcessing}
+                            className="inline-flex items-center gap-2 rounded-full border border-emerald-300/40 bg-emerald-400/20 px-4 py-2 text-sm text-white hover:bg-emerald-400/30 disabled:cursor-progress disabled:opacity-70"
+                          >
+                            {isModelProcessing && (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            )}
+                            {isModelProcessing ? "3Dモデル生成中…" : "3Dモデル生成"}
+                          </Button>
+                          {isModelReady && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setShow3dViewer(true)}
+                              className="rounded-full border-white/30 bg-white/5 text-white hover:bg-white/10"
+                            >
+                              3Dで表示
+                            </Button>
+                          )}
+                          {isModelFailed && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={handleGenerateFinalModel}
+                              className="rounded-full border border-rose-300/50 bg-rose-500/15 text-rose-100 hover:bg-rose-500/25"
+                            >
+                              再試行
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        selectedChatId && (
+                          <VideoPlayer
+                            videoBase64={currentVideoBase64}
+                            isGenerating={Boolean(
+                              currentVideoState?.isGenerating
+                            )}
+                            error={currentVideoState?.error ?? null}
+                            onGenerate={() => {
                               void generateVideoForCurrentStep({
                                 source: "ui",
                                 openDialog: true,
                               });
-                            }
-                          }}
-                          onRetry={() => {
-                            void generateVideoForCurrentStep({
-                              source: "ui",
-                              openDialog: true,
-                              allowIfExists: true,
-                            });
-                          }}
-                          className="min-w-[180px]"
-                        />
+                            }}
+                            onShow={() => {
+                              if (currentVideoState?.isGenerating) return;
+                              if (currentVideoBase64) {
+                                handleOpenVideoDialog(currentVideoBase64);
+                              } else {
+                                void generateVideoForCurrentStep({
+                                  source: "ui",
+                                  openDialog: true,
+                                });
+                              }
+                            }}
+                            onRetry={() => {
+                              void generateVideoForCurrentStep({
+                                source: "ui",
+                                openDialog: true,
+                                allowIfExists: true,
+                              });
+                            }}
+                            className="min-w-[180px]"
+                          />
+                        )
                       )}
                       <Button
                         variant="outline"
@@ -1222,6 +1413,11 @@ export function ChatWindow({
                         全ステップ表示
                       </Button>
                     </div>
+                    {isFinalStepSelected && finalModelError && (
+                      <p className="mt-1 text-xs text-rose-200">
+                        {finalModelError}
+                      </p>
+                    )}
                   </div>
                 </div>
               </article>
@@ -1376,6 +1572,11 @@ export function ChatWindow({
         onToggle={handleToggleListening}
       />
     )}
+    <ThreeDViewerDialog
+      open={show3dViewer}
+      onOpenChange={setShow3dViewer}
+      modelSrc={viewerModelSrc ?? undefined}
+    />
     <VoiceCommandFeedback
       feedback={voiceFeedback}
       onDismiss={() => setVoiceFeedback(null)}

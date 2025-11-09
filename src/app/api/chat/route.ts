@@ -112,6 +112,50 @@ ${partsDescription}
 `;
 }
 
+function buildFinalImagePrompt(steps: AssemblyStepPayload[]): string {
+  const ordered = [...steps].sort((a, b) => a.stepIndex - b.stepIndex);
+  const stepNarrative = ordered
+    .map(
+      (step) =>
+        `Step ${step.stepIndex}: ${step.title}\n${step.description.trim()}`
+    )
+    .join("\n\n");
+
+  const partMap = new Map<string, { name: string; color: string }>();
+  ordered.forEach((step) => {
+    step.parts.forEach((part) => {
+      const key = part.name.toLowerCase();
+      if (!partMap.has(key)) {
+        partMap.set(key, { name: part.name, color: part.color });
+      }
+    });
+  });
+
+  const paletteDescription =
+    partMap.size > 0
+      ? Array.from(partMap.values())
+          .map(
+            (part, idx) =>
+              `Component ${idx + 1}: ${part.name} -> ${part.color} (glossy)`
+          )
+          .join("\n")
+      : "If no coloured parts are provided, use subtle grey accents to show depth.";
+
+  return `
+Create a high-resolution instruction-style illustration that shows the furniture fully assembled.
+- Display the final product from a slightly elevated three-quarter view so every coloured surface is visible.
+- Keep the background pure white (#FFFFFF) and use light grey outlines (#D1D5DB) for uncoloured areas.
+- Emphasize the alignment of all panels, screws, and moving parts. Do NOT include people or scenery.
+- Ensure coloured parts use the specified HEX palette with a reflective, premium finish.
+
+Assembly summary:
+${stepNarrative}
+
+Colour palette:
+${paletteDescription}
+`;
+}
+
 function extractJson(responseText: string): AssemblyExtraction | null {
   const match = responseText.match(/\{[\s\S]*\}/);
   if (!match) return null;
@@ -361,13 +405,11 @@ async function executeWithBackoff<T>(
   }
 }
 
-async function generateAssemblyImage(
+async function generateImageFromPrompt(
   ai: GoogleGenAI,
-  step: AssemblyStepPayload
+  prompt: string
 ): Promise<string | undefined> {
-  if (step.parts.length === 0) return undefined;
   try {
-    const prompt = buildImagePrompt(step);
     const result = await executeWithBackoff(() =>
       ai.models.generateContent({
         model: GEMINI_IMAGE_MODEL,
@@ -458,6 +500,22 @@ async function generateAssemblyImage(
       ? error
       : new Error("Image generation failed for an unknown reason.");
   }
+}
+
+async function generateAssemblyImage(
+  ai: GoogleGenAI,
+  step: AssemblyStepPayload
+): Promise<string | undefined> {
+  if (step.parts.length === 0) return undefined;
+  return generateImageFromPrompt(ai, buildImagePrompt(step));
+}
+
+async function generateFinalPreviewImage(
+  ai: GoogleGenAI,
+  steps: AssemblyStepPayload[]
+): Promise<string | undefined> {
+  if (steps.length === 0) return undefined;
+  return generateImageFromPrompt(ai, buildFinalImagePrompt(steps));
 }
 
 export async function POST(request: NextRequest) {
@@ -561,8 +619,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { chat, document } = await prisma.$transaction(async (tx) => {
-      const createdDocument = await tx.document.create({
+    let finalImageBase64: string | undefined;
+    if (steps.length > 0) {
+      try {
+        finalImageBase64 = await generateFinalPreviewImage(imageClient, steps);
+      } catch (error) {
+        console.warn("Final preview generation failed:", error);
+      }
+    }
+
+    let documentRecord: Awaited<ReturnType<typeof prisma.document.create>> | null =
+      null;
+    let chatRecord: Awaited<ReturnType<typeof prisma.chat.create>> | null = null;
+
+    try {
+      documentRecord = await prisma.document.create({
         data: {
           userId,
           name: file.name,
@@ -571,17 +642,18 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const createdChat = await tx.chat.create({
+      chatRecord = await prisma.chat.create({
         data: {
           title,
-          documentId: createdDocument.id,
+          documentId: documentRecord.id,
+          finalImageBase64: finalImageBase64 ?? null,
         },
       });
 
       if (stepsWithImages.length > 0) {
-        await tx.assemblyStep.createMany({
+        await prisma.assemblyStep.createMany({
           data: stepsWithImages.map((step) => ({
-            chatId: createdChat.id,
+            chatId: chatRecord!.id,
             stepIndex: step.stepIndex,
             title: step.title,
             description: step.description,
@@ -590,17 +662,33 @@ export async function POST(request: NextRequest) {
           })),
         });
       }
-
-      return { chat: createdChat, document: createdDocument };
-    });
+    } catch (dbError) {
+      // Roll back manually since we're not using a DB transaction (pgbouncer safe)
+      if (chatRecord) {
+        await prisma.chat.delete({ where: { id: chatRecord.id } }).catch(() => {
+          /* noop */
+        });
+      }
+      if (documentRecord) {
+        await prisma.document
+          .delete({ where: { id: documentRecord.id } })
+          .catch(() => {
+            /* noop */
+          });
+      }
+      throw dbError;
+    }
 
     return NextResponse.json({
-      id: chat.id,
-      title: chat.title,
-      fileName: document.name,
-      createdAt: chat.createdAt.toISOString(),
-      updatedAt: chat.updatedAt.toISOString(),
+      id: chatRecord!.id,
+      title: chatRecord!.title,
+      fileName: documentRecord!.name,
+      createdAt: chatRecord!.createdAt.toISOString(),
+      updatedAt: chatRecord!.updatedAt.toISOString(),
       assemblySteps: stepsWithImages,
+      finalImageBase64: finalImageBase64 ?? null,
+      finalModelGlbUrl: chatRecord!.finalModelGlbUrl ?? null,
+      finalModelStatus: chatRecord!.finalModelStatus,
     });
   } catch (error) {
     console.error("Chat creation error:", error);
