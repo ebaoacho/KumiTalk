@@ -15,7 +15,7 @@ PDFの取説をアップロードすると、工程や部品の疑問に根拠�
 ## 各種リンク
 
 - サイトURL  ：[組みTalk](https://kumi-talk-tanakastronghold.vercel.app)
-- デモ動画URL：[組みTalkデモモ動画](https://youtu.be/QWwfHjx5484)
+- デモ動画URL：[組みTalkデモ動画](https://youtu.be/QWwfHjx5484)
 
 ## 製品概要
 
