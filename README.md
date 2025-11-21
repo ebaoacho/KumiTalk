@@ -9,8 +9,8 @@ PDFの取説をアップロードすると、工程や部品の疑問に根拠�
 
 ## 受賞歴
 
-JPHacks HackDay : 三菱重工株式会社賞
-JPHacks AwardDay: 株式会社セキュアサイクル賞
+- JPHacks HackDay : 三菱重工株式会社賞
+- JPHacks AwardDay: 株式会社セキュアサイクル賞
 
 ## 各種リンク
 
